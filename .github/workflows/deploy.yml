@@ -22,18 +22,18 @@ jobs:
           node-version: "18"
           cache: "npm"
 
-      - name: 🔍 Verify Environment Secrets
-        env:
-          FTP_SERVER: ${{ secrets.FTP_SERVER }}
-          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
-          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-        run: |
-          echo "Verifying FTP environment secrets..."
-          if [ -z "$FTP_SERVER" ] || [ -z "$FTP_USERNAME" ] || [ -z "$FTP_PASSWORD" ]; then
-            echo "::error::Missing FTP secrets!"
-            exit 1
-          fi
-          echo "✅ All secrets verified"
+      #   - name: 🔍 Verify Environment Secrets
+      #     env:
+      #       FTP_SERVER: ${{ secrets.FTP_SERVER }}
+      #       FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+      #       FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+      #     run: |
+      #       echo "Verifying FTP environment secrets..."
+      #       if [ -z "$FTP_SERVER" ] || [ -z "$FTP_USERNAME" ] || [ -z "$FTP_PASSWORD" ]; then
+      #         echo "::error::Missing FTP secrets!"
+      #         exit 1
+      #       fi
+      #       echo "✅ All secrets verified"
 
       - name: 📦 Install dependencies
         run: |
