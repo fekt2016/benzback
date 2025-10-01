@@ -22,42 +22,78 @@ jobs:
           node-version: "18"
           cache: "npm"
 
-      #   - name: 🔍 Verify Environment Secrets
-      #     env:
-      #       FTP_SERVER: ${{ secrets.FTP_SERVER }}
-      #       FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
-      #       FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-      #     run: |
-      #       echo "Verifying FTP environment secrets..."
-      #       if [ -z "$FTP_SERVER" ] || [ -z "$FTP_USERNAME" ] || [ -z "$FTP_PASSWORD" ]; then
-      #         echo "::error::Missing FTP secrets!"
-      #         exit 1
-      #       fi
-      #       echo "✅ All secrets verified"
+      - name: 🔍 Debug FTP Secrets
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          echo "=== Debugging FTP Secrets ==="
+          echo "FTP_SERVER length: ${#FTP_SERVER}"
+          echo "FTP_USERNAME length: ${#FTP_USERNAME}"
+          echo "FTP_PASSWORD length: ${#FTP_PASSWORD}"
+
+          if [ -z "$FTP_SERVER" ]; then
+            echo "❌ FTP_SERVER is EMPTY or NOT SET"
+          else
+            echo "✅ FTP_SERVER is set (first 10 chars: ${FTP_SERVER:0:10}...)"
+          fi
+
+          if [ -z "$FTP_USERNAME" ]; then
+            echo "❌ FTP_USERNAME is EMPTY or NOT SET"
+          else
+            echo "✅ FTP_USERNAME is set (value: $FTP_USERNAME)"
+          fi
+
+          if [ -z "$FTP_PASSWORD" ]; then
+            echo "❌ FTP_PASSWORD is EMPTY or NOT SET"
+          else
+            echo "✅ FTP_PASSWORD is set (length: ${#FTP_PASSWORD} characters)"
+          fi
+
+          # Check if any are missing
+          if [ -z "$FTP_SERVER" ] || [ -z "$FTP_USERNAME" ] || [ -z "$FTP_PASSWORD" ]; then
+            echo "::error::One or more FTP secrets are missing or empty!"
+            echo "Please check your GitHub repository secrets in Settings -> Secrets and variables -> Actions"
+            echo "Required secrets: FTP_SERVER, FTP_USERNAME, FTP_PASSWORD"
+            exit 1
+          fi
+
+          echo "✅ All FTP secrets are properly set and verified!"
 
       - name: 📦 Install dependencies
         run: |
+          echo "Installing production dependencies..."
           npm ci --only=production --legacy-peer-deps
           npm cache clean --force
+          echo "✅ Dependencies installed successfully"
 
       - name: 🧹 Prepare deployment package
         run: |
+          echo "Preparing deployment package..."
           mkdir -p deployment
 
           # Copy essential files
           cp -r app.js server.js package.json package-lock.json deployment/
 
-          # Copy config if it exists
-          if [ -f "config.env" ]; then cp config.env deployment/; fi
+          # Copy environment file if it exists (but remove sensitive data in real scenario)
+          if [ -f "config.env" ]; then 
+            # In real scenario, you might want to create a production config instead
+            cp config.env deployment/
+            echo "✅ config.env included"
+          else
+            echo "ℹ️  config.env not found"
+          fi
 
           # Copy other directories that might exist
           for dir in src public views routes models middleware config; do
             if [ -d "$dir" ]; then
               cp -r "$dir" deployment/
+              echo "✅ $dir directory included"
             fi
           done
 
-          echo "📦 Deployment package ready:"
+          echo "📦 Deployment package contents:"
           ls -la deployment/
 
       - name: 📤 Deploy via FTP
@@ -66,7 +102,7 @@ jobs:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./
+          local-dir: ./deployment/
           server-dir: ./public_html/myapp/
           exclude: |
             **/.git*
@@ -79,19 +115,22 @@ jobs:
             **/README.md
             **/docker-compose*
             **/Dockerfile
+            **/deployment/
           dangerous-clean-slate: false
           log-level: verbose
 
-      - name: 📋 Completion
+      - name: 📋 Deployment Summary
         run: |
-          echo "✅ FTP upload completed successfully!"
-          echo "🌐 Your application is deployed to: /public_html/myapp/"
           echo ""
-          echo "🔧 Next steps to complete deployment:"
-          echo "   1. SSH into your server: ssh yourusername@benzflex.com"
+          echo "🎉 DEPLOYMENT COMPLETED SUCCESSFULLY!"
+          echo "======================================"
+          echo "🌐 Application deployed to: /public_html/myapp/"
+          echo "🔗 Live URL: https://benzflex.com"
+          echo ""
+          echo "🔧 POST-DEPLOYMENT STEPS:"
+          echo "   1. SSH into your server"
           echo "   2. Navigate to: cd /home/turtlvhi/public_html/myapp"
           echo "   3. Install production dependencies: npm install --production"
-          echo "   4. Restart your Node.js app via cPanel Node.js Selector"
-          echo "   5. Verify at: https://benzflex.com"
-          echo ""
-          echo "📞 Need help? Check your cPanel Node.js application settings"
+          echo "   4. Set up environment variables in cPanel"
+          echo "   5. Restart your Node.js app via cPanel Node.js Selector"
+          echo "   6. Verify at: https://benzflex.com"
