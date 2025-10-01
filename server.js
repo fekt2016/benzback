@@ -13,12 +13,9 @@ if (missingVars.length > 0) {
   );
   process.exit(1);
 }
-
+const encodedPassword = encodeURIComponent(process.env.MONGO_PASSWORD);
 // MongoDB connection string
-const mongodb = process.env.MONGO_URL.replace(
-  "<PASSWORD>",
-  process.env.MONGO_PASSWORD
-);
+const mongodb = process.env.MONGO_URL.replace("<PASSWORD>", encodedPassword);
 
 // Global error handlers
 process.on("unhandledRejection", (err) => {
@@ -69,9 +66,7 @@ process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 // Connect to MongoDB
 const connectDatabase = async () => {
   try {
-    const conn = await mongoose.connect(mongodb, {
-      useNewUrlParser: true,
-    });
+    const conn = await mongoose.connect(mongodb);
 
     console.log("✅ Connected to MongoDB successfully");
     console.log(`📊 MongoDB Host: ${conn.connection.host}`);
