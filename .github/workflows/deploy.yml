@@ -8,6 +8,10 @@ jobs:
   deploy:
     name: 🎉 Deploy to Production
     runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://benzflex.com
+
     steps:
       - name: 🚚 Checkout code
         uses: actions/checkout@v4
@@ -15,7 +19,7 @@ jobs:
       - name: ⚙️ Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18" # ✅ Specify Node.js version
+          node-version: "18"
           cache: "npm"
 
       - name: 🔍 Verify Environment Secrets
@@ -36,20 +40,25 @@ jobs:
           npm ci --only=production --legacy-peer-deps
           npm cache clean --force
 
-      - name: 🏗️ Build project (if needed)
+      - name: 🧹 Prepare deployment package
         run: |
-          # Add build commands if you have TypeScript, React, etc.
-          # npm run build
-          echo "No build step required for this project"
-
-      - name: 🧹 Clean deployment directory
-        run: |
-          # Create deployment package
           mkdir -p deployment
-          cp -r app.js server.js package.json config.env deployment/
-          # Copy other necessary files/folders
-          # cp -r src deployment/  # if you have src folder
-          # cp -r public deployment/  # if you have public folder
+
+          # Copy essential files
+          cp -r app.js server.js package.json package-lock.json deployment/
+
+          # Copy config if it exists
+          if [ -f "config.env" ]; then cp config.env deployment/; fi
+
+          # Copy other directories that might exist
+          for dir in src public views routes models middleware config; do
+            if [ -d "$dir" ]; then
+              cp -r "$dir" deployment/
+            fi
+          done
+
+          echo "📦 Deployment package ready:"
+          ls -la deployment/
 
       - name: 📤 Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -57,7 +66,7 @@ jobs:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./ # Or ./deployment if using cleaned directory
+          local-dir: ./deployment/
           server-dir: ./public_html/myapp/
           exclude: |
             **/.git*
@@ -65,18 +74,24 @@ jobs:
             **/node_modules/**
             **/test/**
             **/*.md
-            **/.env*
-            **/deployment/
+            **/.env.example
             **/.gitignore
             **/README.md
+            **/docker-compose*
+            **/Dockerfile
+          dangerous-clean-slate: false
           log-level: verbose
 
       - name: 📋 Completion
         run: |
-          echo "✅ FTP upload completed!"
-          echo "🌐 Your files are at: /public_html/myapp/"
-          echo "🔧 Remember to:"
-          echo "   1. SSH into your server"
-          echo "   2. Navigate to: /home/turtlvhi/public_html/myapp"
-          echo "   3. Run: npm install --production"
-          echo "   4. Restart your Node.js app in cPanel"
+          echo "✅ FTP upload completed successfully!"
+          echo "🌐 Your application is deployed to: /public_html/myapp/"
+          echo ""
+          echo "🔧 Next steps to complete deployment:"
+          echo "   1. SSH into your server: ssh yourusername@benzflex.com"
+          echo "   2. Navigate to: cd /home/turtlvhi/public_html/myapp"
+          echo "   3. Install production dependencies: npm install --production"
+          echo "   4. Restart your Node.js app via cPanel Node.js Selector"
+          echo "   5. Verify at: https://benzflex.com"
+          echo ""
+          echo "📞 Need help? Check your cPanel Node.js application settings"
