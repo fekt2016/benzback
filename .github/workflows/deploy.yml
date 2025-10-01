@@ -1,0 +1,82 @@
+name: 🚀 FTP Deployment for Express Backend
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: 🎉 Deploy to Production
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🚚 Checkout code
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18" # ✅ Specify Node.js version
+          cache: "npm"
+
+      - name: 🔍 Verify Environment Secrets
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          echo "Verifying FTP environment secrets..."
+          if [ -z "$FTP_SERVER" ] || [ -z "$FTP_USERNAME" ] || [ -z "$FTP_PASSWORD" ]; then
+            echo "::error::Missing FTP secrets!"
+            exit 1
+          fi
+          echo "✅ All secrets verified"
+
+      - name: 📦 Install dependencies
+        run: |
+          npm ci --only=production --legacy-peer-deps
+          npm cache clean --force
+
+      - name: 🏗️ Build project (if needed)
+        run: |
+          # Add build commands if you have TypeScript, React, etc.
+          # npm run build
+          echo "No build step required for this project"
+
+      - name: 🧹 Clean deployment directory
+        run: |
+          # Create deployment package
+          mkdir -p deployment
+          cp -r app.js server.js package.json config.env deployment/
+          # Copy other necessary files/folders
+          # cp -r src deployment/  # if you have src folder
+          # cp -r public deployment/  # if you have public folder
+
+      - name: 📤 Deploy via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./ # Or ./deployment if using cleaned directory
+          server-dir: ./public_html/myapp/
+          exclude: |
+            **/.git*
+            **/.github*
+            **/node_modules/**
+            **/test/**
+            **/*.md
+            **/.env*
+            **/deployment/
+            **/.gitignore
+            **/README.md
+          log-level: verbose
+
+      - name: 📋 Completion
+        run: |
+          echo "✅ FTP upload completed!"
+          echo "🌐 Your files are at: /public_html/myapp/"
+          echo "🔧 Remember to:"
+          echo "   1. SSH into your server"
+          echo "   2. Navigate to: /home/turtlvhi/public_html/myapp"
+          echo "   3. Run: npm install --production"
+          echo "   4. Restart your Node.js app in cPanel"
