@@ -14,7 +14,7 @@ const startServer = async () => {
       process.env.MONGO_PASSWORD
     );
     // MongoDB connection
-    const conn = await mongoose.connect(db);
+    const conn = await mongoose.connect(db, { maxPoolSize: 10 });
     console.log(`✅ MongoDB connected: ${conn.connection.host}`);
 
     // Start Express server
