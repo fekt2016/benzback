@@ -16,7 +16,7 @@ const routers = {
   // notification: require("./Routes/notificationRoutes"),
   // review: require("./Routes/reviewRoutes"),
   // booking: require("./Routes/bookingRoutes"),
-  // auth: require("./Routes/authRoutes"),
+  auth: require("./Routes/authRoutes"),
 };
 // Set memory limits first
 process.env.NODE_OPTIONS = "--max-old-space-size=2048";
@@ -188,7 +188,7 @@ app.use((req, res, next) => {
 // app.use("/api/v1/notifications", routers.notification);
 // app.use("/api/v1/reviews", routers.review);
 // app.use("/api/v1/bookings", routers.booking);
-// app.use("/api/v1/auth", routers.auth);
+app.use("/api/v1/auth", routers.auth);
 
 // Health check endpoint
 app.get("/api/v1/health", (req, res) => {
