@@ -32,66 +32,32 @@ jobs:
           echo "FTP_SERVER length: ${#FTP_SERVER}"
           echo "FTP_USERNAME length: ${#FTP_USERNAME}"
           echo "FTP_PASSWORD length: ${#FTP_PASSWORD}"
-
-          if [ -z "$FTP_SERVER" ]; then
-            echo "❌ FTP_SERVER is EMPTY or NOT SET"
-          else
-            echo "✅ FTP_SERVER is set (first 10 chars: ${FTP_SERVER:0:10}...)"
-          fi
-
-          if [ -z "$FTP_USERNAME" ]; then
-            echo "❌ FTP_USERNAME is EMPTY or NOT SET"
-          else
-            echo "✅ FTP_USERNAME is set (value: $FTP_USERNAME)"
-          fi
-
-          if [ -z "$FTP_PASSWORD" ]; then
-            echo "❌ FTP_PASSWORD is EMPTY or NOT SET"
-          else
-            echo "✅ FTP_PASSWORD is set (length: ${#FTP_PASSWORD} characters)"
-          fi
-
-          # Check if any are missing
           if [ -z "$FTP_SERVER" ] || [ -z "$FTP_USERNAME" ] || [ -z "$FTP_PASSWORD" ]; then
-            echo "::error::One or more FTP secrets are missing or empty!"
-            echo "Please check your GitHub repository secrets in Settings -> Secrets and variables -> Actions"
-            echo "Required secrets: FTP_SERVER, FTP_USERNAME, FTP_PASSWORD"
+            echo "::error::One or more FTP secrets are missing!"
             exit 1
           fi
-
-          echo "✅ All FTP secrets are properly set and verified!"
+          echo "✅ FTP secrets verified"
 
       - name: 📦 Install dependencies
         run: |
           echo "Installing production dependencies..."
           npm ci --only=production --legacy-peer-deps
           npm cache clean --force
-          echo "✅ Dependencies installed successfully"
+          echo "✅ Dependencies installed"
 
       - name: 🧹 Prepare deployment package
         run: |
           echo "Preparing deployment package..."
+          rm -rf deployment
           mkdir -p deployment
 
-          # Copy essential files
-          cp -r app.js server.js package.json package-lock.json deployment/
-
-          # Copy environment file if it exists (but remove sensitive data in real scenario)
-          if [ -f "config.env" ]; then 
-            # In real scenario, you might want to create a production config instead
-            cp config.env deployment/
-            echo "✅ config.env included"
-          else
-            echo "ℹ️  config.env not found"
-          fi
-
-          # Copy other directories that might exist
-          for dir in src public views routes models middleware config; do
-            if [ -d "$dir" ]; then
-              cp -r "$dir" deployment/
-              echo "✅ $dir directory included"
-            fi
-          done
+          # Copy all files except excluded ones
+          rsync -av --exclude='node_modules' \
+                    --exclude='.git' \
+                    --exclude='test' \
+                    --exclude='.github' \
+                    --exclude='deployment' \
+                    ./ ./deployment/
 
           echo "📦 Deployment package contents:"
           ls -la deployment/
@@ -105,18 +71,12 @@ jobs:
           local-dir: ./deployment/
           server-dir: /benzback/
           exclude: |
-            **/.git*
-            **/.github*
-            **/node_modules/**
-            **/test/**
-            **/*.md
-            **/.env.example
-            **/.gitignore
-            **/README.md
-            **/docker-compose*
-            **/Dockerfile
-            **/deployment/
-          dangerous-clean-slate: true
+            node_modules/**
+            test/**
+            .git*
+            .github/**
+            deployment/**
+          dangerous-clean-slate: false
           log-level: verbose
 
       - name: 📋 Deployment Summary
@@ -124,13 +84,5 @@ jobs:
           echo ""
           echo "🎉 DEPLOYMENT COMPLETED SUCCESSFULLY!"
           echo "======================================"
-          echo "🌐 Application deployed to: /public_html/myapp/"
+          echo "🌐 Application deployed to /benzback/"
           echo "🔗 Live URL: https://benzflex.com"
-          echo ""
-          echo "🔧 POST-DEPLOYMENT STEPS:"
-          echo "   1. SSH into your server"
-          echo "   2. Navigate to: cd /home/turtlvhi/public_html/myapp"
-          echo "   3. Install production dependencies: npm install --production"
-          echo "   4. Set up environment variables in cPanel"
-          echo "   5. Restart your Node.js app via cPanel Node.js Selector"
-          echo "   6. Verify at: https://benzflex.com"
