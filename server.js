@@ -2,7 +2,6 @@ const mongoose = require("mongoose");
 const dotenv = require("dotenv");
 dotenv.config({ path: "./config.env" });
 const app = require("./app");
-const AppError = require("./utils/appError");
 
 // Validate required environment variables
 const requiredEnvVars = ["MONGO_URL", "MONGO_PASSWORD"];
