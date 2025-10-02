@@ -9,14 +9,14 @@ const cloudinary = require("cloudinary").v2;
 
 // Routers
 const routers = {
-  payment: require("./Routes/paymentRoutes"),
-  user: require("./Routes/userRoutes"),
-  car: require("./Routes/carRoutes"),
-  drivers: require("./Routes/driverRoutes"),
-  notification: require("./Routes/notificationRoutes"),
-  review: require("./Routes/reviewRoutes"),
-  booking: require("./Routes/bookingRoutes"),
-  auth: require("./Routes/authRoutes"),
+  // payment: require("./Routes/paymentRoutes"),
+  // user: require("./Routes/userRoutes"),
+  // car: require("./Routes/carRoutes"),
+  // drivers: require("./Routes/driverRoutes"),
+  // notification: require("./Routes/notificationRoutes"),
+  // review: require("./Routes/reviewRoutes"),
+  // booking: require("./Routes/bookingRoutes"),
+  // auth: require("./Routes/authRoutes"),
 };
 // Set memory limits first
 process.env.NODE_OPTIONS = "--max-old-space-size=2048";
@@ -181,14 +181,14 @@ app.use((req, res, next) => {
 });
 
 // Routes
-app.use("/api/v1/payment", routers.payment);
-app.use("/api/v1/users", routers.user);
-app.use("/api/v1/cars", routers.car);
-app.use("/api/v1/drivers", routers.drivers);
-app.use("/api/v1/notifications", routers.notification);
-app.use("/api/v1/reviews", routers.review);
-app.use("/api/v1/bookings", routers.booking);
-app.use("/api/v1/auth", routers.auth);
+// app.use("/api/v1/payment", routers.payment);
+// app.use("/api/v1/users", routers.user);
+// app.use("/api/v1/cars", routers.car);
+// app.use("/api/v1/drivers", routers.drivers);
+// app.use("/api/v1/notifications", routers.notification);
+// app.use("/api/v1/reviews", routers.review);
+// app.use("/api/v1/bookings", routers.booking);
+// app.use("/api/v1/auth", routers.auth);
 
 // Health check endpoint
 app.get("/api/v1/health", (req, res) => {
@@ -206,6 +206,6 @@ app.use((req, res, next) => {
 });
 
 // Global error handler
-app.use(globalErrorHandler);
+// app.use(globalErrorHandler);
 
 module.exports = app;
