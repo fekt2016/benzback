@@ -53,7 +53,7 @@ userSchema.methods.verifyOtp = function (enteredOtp) {
 
 // Compare password
 userSchema.methods.correctPassword = async function (candidate, hashed) {
-  return bcrypt.compare(candidate, hashed);
+  return await bcrypt.compare(candidate, hashed);
 };
 
 // 🔑 Check password change
