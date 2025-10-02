@@ -4,10 +4,6 @@ const cloudinary = require("cloudinary").v2;
 const cookieParser = require("cookie-parser");
 const globalErrorHandler = require("./controllers/errorController");
 
-const routers = {
-  cars: require("./Routes/carRoutes"),
-};
-
 const app = express();
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -46,8 +42,6 @@ app.use(cors(corsOptions));
 // Middleware to parse JSON bodies
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-app.use("/api/v1/cars", routers.cars);
 
 app.use((req, res, next) => {
   next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));
