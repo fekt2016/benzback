@@ -4,6 +4,10 @@ const cloudinary = require("cloudinary").v2;
 const cookieParser = require("cookie-parser");
 const globalErrorHandler = require("./controllers/errorController");
 
+const routers = {
+  cars: require("./Routes/carRoutes"),
+};
+
 const app = express();
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -43,8 +47,10 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.all("/*", (req, res, next) => {
-  next(new AppError(`Can't find ${req.originalUrl} on this server`, 404));
+app.use("/api/v1/cars", routers.cars);
+
+app.use((req, res, next) => {
+  next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));
 });
 
 app.use(globalErrorHandler);
