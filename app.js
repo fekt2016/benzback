@@ -13,6 +13,7 @@ cloudinary.config({
   secure: true,
   timeout: 120000,
 });
+//cloudinary
 app.set("cloudinary", cloudinary);
 app.use(cookieParser());
 const routers = {
