@@ -14,16 +14,7 @@ cloudinary.config({
 });
 app.set("cloudinary", cloudinary);
 app.use(cookieParser());
-const routers = {
-  payment: require("./Routes/paymentRoutes"),
-  user: require("./Routes/userRoutes"),
-  car: require("./Routes/carRoutes"),
-  drivers: require("./Routes/driverRoutes"),
-  notification: require("./Routes/notificationRoutes"),
-  review: require("./Routes/reviewRoutes"),
-  booking: require("./Routes/bookingRoutes"),
-  auth: require("./Routes/authRoutes"),
-};
+
 // CORS configuration
 // Allow requests from the front-end domain, or use a wildcard for testing (not recommended for production)
 const corsOptions = {
