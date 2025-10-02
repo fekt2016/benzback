@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const cloudinary = require("cloudinary").v2;
 const cookieParser = require("cookie-parser");
-const globalErrorHandler = require("./controllers/errorController");
+// const globalErrorHandler = require("./controllers/errorController");
 const AppError = require("./utils/appError");
 
 const app = express();
@@ -71,6 +71,6 @@ app.use((req, res, next) => {
   next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));
 });
 
-app.use(globalErrorHandler);
+// app.use(globalErrorHandler);
 // Export the app instance
 module.exports = app;
