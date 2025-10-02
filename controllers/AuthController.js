@@ -1,6 +1,8 @@
 const { validateUSPhone } = require("../utils/helper");
 const catchAsync = require("../utils/catchAysnc");
 const { generateOTP } = require("../utils/OtpSystem");
+const crypto = require("crypto");
+const User = require("../models/userModel");
 
 exports.signup = catchAsync(async (req, res, next) => {
   //get form fields from the body
@@ -24,8 +26,28 @@ exports.signup = catchAsync(async (req, res, next) => {
 
   const otp = generateOTP();
   const otpExpires = Date.now() + 10 * 60 * 10000;
-  res
-    .status(200)
-    .json({ status: "success", message: "Validation passed", otp, otpExpires });
+  const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
+
+  const newUser = await User.create({
+    fullName,
+    email,
+    phone: phone.replace(/\D/g, ""),
+    password,
+    passwordConfirm,
+    otp: hashedOtp,
+    otpExpires,
+    phoneVerified: false,
+  });
+  res.status(200).json({
+    status: "success",
+    message: "Account created! Please verify with the OTP sent to your phone",
+    data: {
+      user: {
+        id: newUser._id,
+        name: newUser.fullName,
+        phone: newUser.phone,
+      },
+    },
+  });
 });
 exports.login = (req, res) => {};
