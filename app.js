@@ -67,5 +67,13 @@ app.use((err, req, res, next) => {
     message: err.message || "Internal Server Error",
   });
 });
+console.log("🚀 Registered routes:");
+console.log(
+  app._router.stack
+    .filter((r) => r.route) // only keep layers with a route
+    .map(
+      (r) => `${Object.keys(r.route.methods)[0].toUpperCase()} ${r.route.path}`
+    )
+);
 
 module.exports = app;
