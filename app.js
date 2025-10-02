@@ -17,14 +17,14 @@ cloudinary.config({
 app.set("cloudinary", cloudinary);
 app.use(cookieParser());
 const routers = {
-  payment: require("./routes/paymentRoutes"),
-  user: require("./routes/userRoutes"),
-  car: require("./routes/carRoutes"),
-  drivers: require("./routes/driverRoutes"),
-  notification: require("./routes/notificationRoutes"),
-  review: require("./routes/reviewRoutes"),
-  booking: require("./routes/bookingRoutes"),
-  auth: require("./routes/authRoutes"),
+  payment: require("./Routes/paymentRoutes"),
+  user: require("./Routes/userRoutes"),
+  car: require("./Routes/carRoutes"),
+  drivers: require("./Routes/driverRoutes"),
+  notification: require("./Routes/notificationRoutes"),
+  review: require("./Routes/reviewRoutes"),
+  booking: require("./Routes/bookingRoutes"),
+  auth: require("./Routes/authRoutes"),
 };
 
 // CORS configuration
