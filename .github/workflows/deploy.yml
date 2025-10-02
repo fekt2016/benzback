@@ -116,7 +116,7 @@ jobs:
             **/docker-compose*
             **/Dockerfile
             **/deployment/
-          dangerous-clean-slate: false
+          dangerous-clean-slate: true
           log-level: verbose
 
       - name: 📋 Deployment Summary
