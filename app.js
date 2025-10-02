@@ -206,6 +206,6 @@ app.use((req, res, next) => {
 });
 
 // Global error handler
-// app.use(globalErrorHandler);
+app.use(globalErrorHandler);
 
 module.exports = app;
