@@ -37,7 +37,6 @@ const corsOptions = {
         "https://benzflex.com",
         "https://www.benzflex.com",
         "https://api.benzflex.com",
-        process.env.FRONTEND_URL,
       ].filter(Boolean) // Remove any falsy values
     : true, // Allow all in development
   credentials: true,
