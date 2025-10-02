@@ -8,6 +8,19 @@ const userSchema = new mongoose.Schema(
     phone: { type: String, required: true, unique: true },
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true, minlength: 6, select: false },
+    passwordConfirm: {
+      type: String,
+      required: [true, "Please confirm your password"],
+      validate: {
+        // Only works on CREATE and SAVE
+        validator: function (el) {
+          return el === this.password;
+        },
+        message: "Passwords do not match",
+      },
+      select: false, // do not persist
+    },
+
     role: { type: String, enum: ["user", "admin"], default: "user" },
 
     otp: { type: String, select: false },
@@ -31,15 +44,16 @@ const userSchema = new mongoose.Schema(
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
   this.password = await bcrypt.hash(this.password, 12);
+  this.passwordConfirm = undefined; // never save confirm
   next();
 });
 
-// Create OTP (hash before saving)
+// Create OTP
 userSchema.methods.createOtp = function () {
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   this.otp = crypto.createHash("sha256").update(otp).digest("hex");
-  this.otpExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
-  return otp; // raw OTP to send via SMS/Email
+  this.otpExpires = Date.now() + 10 * 60 * 1000;
+  return otp;
 };
 
 // Verify OTP
@@ -54,18 +68,6 @@ userSchema.methods.verifyOtp = function (enteredOtp) {
 // Compare password
 userSchema.methods.correctPassword = async function (candidate, hashed) {
   return await bcrypt.compare(candidate, hashed);
-};
-
-// 🔑 Check password change
-userSchema.methods.changedPasswordAfter = function (JWTTimestamp) {
-  if (this.passwordChangedAt) {
-    const changedTimestamp = parseInt(
-      this.passwordChangedAt.getTime() / 1000,
-      10
-    );
-    return JWTTimestamp < changedTimestamp;
-  }
-  return false;
 };
 
 module.exports = mongoose.model("User", userSchema);
