@@ -39,6 +39,20 @@ app.use(
 if (process.env.NODE_ENV === "development") {
   app.use(morgan("dev"));
 }
+app.use((req, res, next) => {
+  if (process.env.NODE_ENV === "production") {
+    console.log(`[API CALL] ${req.method} ${req.originalUrl}`);
+    // Optional: log body
+    if (req.body && Object.keys(req.body).length > 0) {
+      console.log("Body:", req.body);
+    }
+    // Optional: log query parameters
+    if (req.query && Object.keys(req.query).length > 0) {
+      console.log("Query:", req.query);
+    }
+  }
+  next();
+});
 
 // API Routes
 app.use("/api/v1/auth", authRouter);
@@ -46,6 +60,7 @@ app.use("/api/v1/auth", authRouter);
 
 // Global error handler
 app.use((err, req, res, next) => {
+  console.log(req.config);
   console.error(err.stack);
   res.status(err.statusCode || 500).json({
     status: "error",
