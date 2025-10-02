@@ -58,14 +58,6 @@ app.use((req, res, next) => {
 app.use("/api/v1/auth", authRouter);
 // app.use("/api/users", userRouter);
 
-console.log("🚀 Registered routes:");
-console.log(
-  app._router.stack
-    .filter((r) => r.route) // only keep layers with a route
-    .map(
-      (r) => `${Object.keys(r.route.methods)[0].toUpperCase()} ${r.route.path}`
-    )
-);
 // Global error handler
 app.use((err, req, res, next) => {
   console.log(req.config);

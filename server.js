@@ -20,6 +20,19 @@ const startServer = async () => {
     // Start Express server
     const server = app.listen(PORT, HOST, () => {
       console.log(`🚀 Server running on http://${HOST}:${PORT}`);
+      if (app._router) {
+        console.log("📌 Registered routes:");
+        app._router.stack
+          .filter((r) => r.route)
+          .forEach((r) => {
+            const methods = Object.keys(r.route.methods)
+              .map((m) => m.toUpperCase())
+              .join(", ");
+            console.log(`${methods} ${r.route.path}`);
+          });
+      } else {
+        console.log("⚠️ No routes registered yet!");
+      }
     });
 
     // Graceful shutdown
