@@ -37,7 +37,7 @@ const corsOptions = {
         "https://benzflex.com",
         "https://www.benzflex.com",
         "https://api.benzflex.com",
-      ].filter(Boolean) // Remove any falsy values
+      ].filter(Boolean)
     : true, // Allow all in development
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
