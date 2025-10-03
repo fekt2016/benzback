@@ -50,4 +50,6 @@ exports.signup = catchAsync(async (req, res, next) => {
     },
   });
 });
-exports.login = (req, res) => {};
+exports.login = catchAsync(async (req, res, next) => {
+  res.send("login");
+});
