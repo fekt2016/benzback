@@ -4,6 +4,7 @@ const { generateOTP } = require("../utils/OtpSystem");
 const crypto = require("crypto");
 const User = require("../models/userModel");
 const AppError = require("../utils/appError");
+// const { sendOTP } = require("../services/twilio");
 
 exports.signup = catchAsync(async (req, res, next) => {
   //get form fields from the body
@@ -52,7 +53,15 @@ exports.signup = catchAsync(async (req, res, next) => {
     otpExpires,
     phoneVerified: false,
   });
-
+  console.log();
+  //   try {
+  //     await sendOTP(phone, otp);
+  //   } catch (err) {
+  //     console.log(err);
+  //     return next(
+  //       new AppError("Account created but failed to send OTP SMS", 500)
+  //     );
+  //   }
   res.status(200).json({
     status: "success",
     message: "Account created! Please verify with the OTP sent to your phone",
@@ -61,7 +70,9 @@ exports.signup = catchAsync(async (req, res, next) => {
         id: newUser._id,
         name: newUser.fullName,
         phone: newUser.phone,
+        email,
       },
+      otp: otp,
     },
   });
 });

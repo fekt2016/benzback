@@ -1,8 +1,8 @@
 const express = require("express");
-const path = require("path");
+const dotenv = require("dotenv");
 const morgan = require("morgan");
 const cors = require("cors");
-
+dotenv.config({ path: "./config.env" });
 // Import your routers
 const authRouter = require("./routes/authRoutes");
 const carRouter = require("./routes/carRoutes");
