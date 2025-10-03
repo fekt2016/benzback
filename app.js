@@ -57,7 +57,30 @@ app.use((req, res, next) => {
 // API Routes
 app.use("/api/v1/auth", authRouter);
 // app.use("/api/users", userRouter);
-
+if (process.env.NODE_ENV === "production") {
+  const getRoutes = (stack, basePath = "") => {
+    let routes = [];
+    stack.forEach((middleware) => {
+      if (middleware.route) {
+        // middleware with route
+        const method = Object.keys(middleware.route.methods)[0].toUpperCase();
+        routes.push(`${method} ${basePath}${middleware.route.path}`);
+      } else if (middleware.name === "router" && middleware.handle.stack) {
+        // router with sub-routes
+        routes = routes.concat(
+          getRoutes(
+            middleware.handle.stack,
+            basePath +
+              (middleware.regexp.source
+                .replace("^\\", "")
+                .replace("\\/?(?=\\/|$)", "") || "")
+          )
+        );
+      }
+    });
+    return routes;
+  };
+}
 // Global error handler
 app.use((err, req, res, next) => {
   console.log(req.config);
