@@ -7,7 +7,7 @@ const User = require("../models/userModel");
 exports.signup = catchAsync(async (req, res, next) => {
   //get form fields from the body
   const { fullName, phone, password, passwordConfirm, email } = req.body;
-  console.log(fullName, phone, password, passwordConfirm, email);
+  //   console.log(fullName, phone, password, passwordConfirm, email);
 
   if (!phone || !validateUSPhone(phone)) {
     return next(new AppError("Please provide a valid US phone number", 400));
