@@ -20,6 +20,41 @@ const startServer = async () => {
     // Start Express server
     const server = app.listen(PORT, HOST, () => {
       console.log(`🚀 Server running on http://${HOST}:${PORT}`);
+      if (app._router && app._router.stack) {
+        const getRoutes = (stack, basePath = "") => {
+          let routes = [];
+          stack.forEach((middleware) => {
+            if (middleware.route) {
+              const method = Object.keys(
+                middleware.route.methods
+              )[0].toUpperCase();
+              routes.push(`${method} ${basePath}${middleware.route.path}`);
+            } else if (
+              middleware.name === "router" &&
+              middleware.handle.stack
+            ) {
+              routes = routes.concat(
+                getRoutes(
+                  middleware.handle.stack,
+                  basePath +
+                    (middleware.regexp?.source
+                      .replace("^\\/", "/")
+                      .replace("\\/?(?=\\/|$)", "") || "")
+                )
+              );
+            }
+          });
+          return routes;
+        };
+
+        const routes = getRoutes(app._router.stack);
+        console.log("✅ Registered routes:");
+        console.log(
+          routes.length > 0 ? routes.join("\n") : "⚠️ No routes found!"
+        );
+      } else {
+        console.log("⚠️ No routes registered yet!");
+      }
     });
 
     // Graceful shutdown

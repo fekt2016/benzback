@@ -3,6 +3,7 @@ const catchAsync = require("../utils/catchAysnc");
 const { generateOTP } = require("../utils/OtpSystem");
 const crypto = require("crypto");
 const User = require("../models/userModel");
+const AppError = require("../utils/appError");
 
 exports.signup = catchAsync(async (req, res, next) => {
   //get form fields from the body
@@ -23,6 +24,19 @@ exports.signup = catchAsync(async (req, res, next) => {
   if (password !== passwordConfirm) {
     return next(new AppError("Passwords do not match", 400));
   }
+  if (!email) {
+    return next(new AppError("Email is required for OTP verification", 400));
+  }
+
+  const existingUser = await User.findOne({
+    $or: [{ email }, { phone: phone.replace(/\D/g, "") }],
+  });
+
+  if (existingUser) {
+    return next(
+      new AppError("User with this email or phone already exists", 400)
+    );
+  }
 
   const otp = generateOTP();
   const otpExpires = Date.now() + 10 * 60 * 10000;
@@ -38,6 +52,7 @@ exports.signup = catchAsync(async (req, res, next) => {
     otpExpires,
     phoneVerified: false,
   });
+
   res.status(200).json({
     status: "success",
     message: "Account created! Please verify with the OTP sent to your phone",

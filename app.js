@@ -5,6 +5,7 @@ const cors = require("cors");
 
 // Import your routers
 const authRouter = require("./routes/authRoutes");
+const carRouter = require("./routes/carRoutes");
 // const userRouter = require("./routes/userRoutes");
 
 const app = express();
@@ -22,11 +23,9 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: function (origin, callback) {
-      // allow requests with no origin (like mobile apps or curl requests)
-      if (!origin) return callback(null, true);
-
+      if (!origin) return callback(null, true); // allow requests with no origin
       if (allowedOrigins.indexOf(origin) === -1) {
-        const msg = `The CORS policy for this site does not allow access from the specified Origin.`;
+        const msg = `The CORS policy does not allow access from this Origin.`;
         return callback(new Error(msg), false);
       }
       return callback(null, true);
@@ -39,14 +38,14 @@ app.use(
 if (process.env.NODE_ENV === "development") {
   app.use(morgan("dev"));
 }
+
+// API CALL logger (only in production)
 app.use((req, res, next) => {
   if (process.env.NODE_ENV === "production") {
     console.log(`[API CALL] ${req.method} ${req.originalUrl}`);
-    // Optional: log body
     if (req.body && Object.keys(req.body).length > 0) {
       console.log("Body:", req.body);
     }
-    // Optional: log query parameters
     if (req.query && Object.keys(req.query).length > 0) {
       console.log("Query:", req.query);
     }
@@ -54,36 +53,14 @@ app.use((req, res, next) => {
   next();
 });
 
+// ========================
 // API Routes
+// ========================
 app.use("/api/v1/auth", authRouter);
+app.use("/api/v1/cars", carRouter);
 // app.use("/api/users", userRouter);
-if (process.env.NODE_ENV === "production") {
-  const getRoutes = (stack, basePath = "") => {
-    let routes = [];
-    stack.forEach((middleware) => {
-      if (middleware.route) {
-        // middleware with route
-        const method = Object.keys(middleware.route.methods)[0].toUpperCase();
-        routes.push(`${method} ${basePath}${middleware.route.path}`);
-      } else if (middleware.name === "router" && middleware.handle.stack) {
-        // router with sub-routes
-        routes = routes.concat(
-          getRoutes(
-            middleware.handle.stack,
-            basePath +
-              (middleware.regexp.source
-                .replace("^\\", "")
-                .replace("\\/?(?=\\/|$)", "") || "")
-          )
-        );
-      }
-    });
-    return routes;
-  };
-}
-// Global error handler
+
 app.use((err, req, res, next) => {
-  console.log(req.config);
   console.error(err.stack);
   res.status(err.statusCode || 500).json({
     status: "error",
