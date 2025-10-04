@@ -6,6 +6,9 @@ dotenv.config({ path: "./config.env" });
 // Import your routers
 const authRouter = require("./routes/authRoutes");
 const carRouter = require("./routes/carRoutes");
+
+const cookieParser = require("cookie-parser");
+
 // const userRouter = require("./routes/userRoutes");
 
 const app = express();
@@ -13,7 +16,7 @@ const app = express();
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
+app.use(cookieParser());
 // CORS configuration
 const allowedOrigins = [
   "http://localhost:5173", // development frontend
