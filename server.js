@@ -2,14 +2,7 @@ const mongoose = require("mongoose");
 
 const app = require("./app");
 
-console.log("SID:", process.env.TWILIO_ACCOUNT_SID);
-console.log(
-  "TOKEN:",
-  process.env.TWILIO_AUTH_TOKEN ? "✅ loaded" : "❌ missing"
-);
-console.log("PHONE:", process.env.TWILIO_PHONE_NUMBER);
-
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST || "0.0.0.0";
 
 const startServer = async () => {

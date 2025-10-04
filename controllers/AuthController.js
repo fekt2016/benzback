@@ -1,5 +1,5 @@
 const { validateUSPhone } = require("../utils/helper");
-const catchAsync = require("../utils/catchAysnc");
+const catchAsync = require("../utils/catchAsync");
 const { generateOTP } = require("../utils/OtpSystem");
 const crypto = require("crypto");
 const User = require("../models/userModel");
@@ -53,7 +53,7 @@ exports.signup = catchAsync(async (req, res, next) => {
     otpExpires,
     phoneVerified: false,
   });
-  console.log();
+
   //   try {
   //     await sendOTP(phone, otp);
   //   } catch (err) {
@@ -75,6 +75,9 @@ exports.signup = catchAsync(async (req, res, next) => {
       otp: otp,
     },
   });
+});
+exports.verifyOtp = catchAsync(async (req, res, next) => {
+  res.send("verify");
 });
 exports.login = catchAsync(async (req, res, next) => {
   res.send("login");
