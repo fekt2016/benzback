@@ -195,85 +195,17 @@ exports.protect = catchAsync(async (req, res, next) => {
 
   next();
 });
-// exports.protect = catchAsync(async (req, res, next) => {
-//   let token;
-//   console.log(req.cookies);
+exports.restrictTo = (...roles) => {
+  return (req, res, next) => {
+    if (!req.user?.role || !roles.includes(req.user.role)) {
+      return next(
+        new AppError("You do not have permission to perform this action", 403)
+      );
+    }
+    next();
+  };
+};
 
-//   // 1) Check if token is in the headers
-//   if (
-//     req.headers.authorization &&
-//     req.headers.authorization.startsWith("Bearer")
-//   ) {
-//     token = req.headers.authorization.split(" ")[1];
-//   }
-
-//   if (!token) {
-//     return next(
-//       new AppError("You are not logged in! Please log in to get access.", 401)
-//     );
-//   }
-
-//   // 2) Verify token
-//   const decoded = await promisify(jwt.verify)(token, process.env.JWT_SECRET);
-
-//   // 3) Check if user still exists
-//   const currentUser = await User.findById(decoded.id);
-//   if (!currentUser) {
-//     return next(
-//       new AppError("The user belonging to this token no longer exists.", 401)
-//     );
-//   }
-
-//   req.user = currentUser;
-//   next();
-// });
-
-// exports.protect = catchAsync(async (req, res, next) => {
-//   const fullPath = req.originalUrl.split("?")[0];
-//   const method = req.method.toUpperCase();
-
-//   if (isPublicRoute(fullPath, method)) {
-//     console.log("🟢 Public route, skipping auth");
-//     return next();
-//   }
-//   let token = extractToken(req.headers.authorization);
-//   if (!token && req.cookies?.jwt) {
-//     token = req.cookies.jwt; // ✅ make sure key matches
-//   }
-
-//   if (!token) {
-//     console.log("❌ No token found");
-//     return next(
-//       new AppError("You are not logged in! Please log in to get access.", 401)
-//     );
-//   }
-//   // const blacklisted = await TokenBlacklist.findOne({ token });
-//   // if (blacklisted) {
-//   //   console.log("❌ Token is blacklisted");
-//   //   return next(
-//   //     new AppError("Your session has expired. Please log in again.", 401)
-//   //   );
-//   // }
-//   const { decoded, error } = await verifyToken(token);
-//   const currentUser = await User.findById(decoded.id);
-
-//   if (!currentUser) {
-//     console.log("❌ No user found for this token");
-//     return next(
-//       new AppError("The user belonging to this token no longer exists.", 401)
-//     );
-//   }
-
-//   if (currentUser.changedPasswordAfter(decoded.iat)) {
-//     console.log("❌ Password changed after token was issued");
-//     return next(
-//       new AppError("Password recently changed! Please log in again.", 401)
-//     );
-//   }
-//   console.log(currentUser);
-//   req.user = currentUser;
-//   next();
-// });
 exports.getMe = catchAsync(async (req, res, next) => {
   const user = await User.findById(req.user._id).select("-password -__v");
 

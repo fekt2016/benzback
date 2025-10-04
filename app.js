@@ -6,6 +6,7 @@ dotenv.config({ path: "./config.env" });
 // Import your routers
 const authRouter = require("./routes/authRoutes");
 const carRouter = require("./routes/carRoutes");
+const notificationRouter = require("./routes/notificationRoutes");
 
 const cookieParser = require("cookie-parser");
 
@@ -61,6 +62,7 @@ app.use((req, res, next) => {
 // ========================
 app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/cars", carRouter);
+app.use("/api/v1/notifications", notificationRouter);
 // app.use("/api/users", userRouter);
 
 app.use((err, req, res, next) => {
