@@ -48,7 +48,8 @@ const carSchema = new mongoose.Schema(
       start: { type: String, default: "08:00" },
       end: { type: String, default: "18:00" },
     },
-
+    mileage: { type: Number, default: 0 },
+    extraMileRate: { type: Number, default: 0.5 },
     // ⭐ Car Features
     features: [
       {

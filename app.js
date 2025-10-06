@@ -7,12 +7,22 @@ dotenv.config({ path: "./config.env" });
 const authRouter = require("./routes/authRoutes");
 const carRouter = require("./routes/carRoutes");
 const notificationRouter = require("./routes/notificationRoutes");
+const driverRouter = require("./routes/driverRoutes");
+const bookingRouter = require("./routes/bookingRoutes");
+const paymentRouter = require("./routes/paymentRoutes");
 
 const cookieParser = require("cookie-parser");
-
+const cloudinary = require("cloudinary").v2;
 // const userRouter = require("./routes/userRoutes");
 
 const app = express();
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+app.set("cloudinary", cloudinary);
 
 // Middleware
 app.use(express.json());
@@ -63,7 +73,9 @@ app.use((req, res, next) => {
 app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/cars", carRouter);
 app.use("/api/v1/notifications", notificationRouter);
-// app.use("/api/users", userRouter);
+app.use("/api/v1/drivers", driverRouter);
+app.use("/api/v1/bookings", bookingRouter);
+app.use("/api/v1/payment", paymentRouter);
 
 app.use((err, req, res, next) => {
   console.error(err.stack);
