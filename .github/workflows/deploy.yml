@@ -1,88 +1,88 @@
-name: 🚀 FTP Deployment for Express Backend
+# name: 🚀 FTP Deployment for Express Backend
 
-on:
-  push:
-    branches: [main]
+# on:
+#   push:
+#     branches: [main]
 
-jobs:
-  deploy:
-    name: 🎉 Deploy to Production
-    runs-on: ubuntu-latest
-    environment:
-      name: server
-      url: https://benzflex.com
+# jobs:
+#   deploy:
+#     name: 🎉 Deploy to Production
+#     runs-on: ubuntu-latest
+#     environment:
+#       name: server
+#       url: https://benzflex.com
 
-    steps:
-      - name: 🚚 Checkout code
-        uses: actions/checkout@v4
+#     steps:
+#       - name: 🚚 Checkout code
+#         uses: actions/checkout@v4
 
-      - name: ⚙️ Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "18"
-          cache: "npm"
+#       - name: ⚙️ Setup Node.js
+#         uses: actions/setup-node@v4
+#         with:
+#           node-version: "18"
+#           cache: "npm"
 
-      - name: 🔍 Debug FTP Secrets
-        env:
-          FTP_SERVER: ${{ secrets.FTP_SERVER }}
-          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
-          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-        run: |
-          echo "=== Debugging FTP Secrets ==="
-          echo "FTP_SERVER length: ${#FTP_SERVER}"
-          echo "FTP_USERNAME length: ${#FTP_USERNAME}"
-          echo "FTP_PASSWORD length: ${#FTP_PASSWORD}"
-          if [ -z "$FTP_SERVER" ] || [ -z "$FTP_USERNAME" ] || [ -z "$FTP_PASSWORD" ]; then
-            echo "::error::One or more FTP secrets are missing!"
-            exit 1
-          fi
-          echo "✅ FTP secrets verified"
+#       - name: 🔍 Debug FTP Secrets
+#         env:
+#           FTP_SERVER: ${{ secrets.FTP_SERVER }}
+#           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+#           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+#         run: |
+#           echo "=== Debugging FTP Secrets ==="
+#           echo "FTP_SERVER length: ${#FTP_SERVER}"
+#           echo "FTP_USERNAME length: ${#FTP_USERNAME}"
+#           echo "FTP_PASSWORD length: ${#FTP_PASSWORD}"
+#           if [ -z "$FTP_SERVER" ] || [ -z "$FTP_USERNAME" ] || [ -z "$FTP_PASSWORD" ]; then
+#             echo "::error::One or more FTP secrets are missing!"
+#             exit 1
+#           fi
+#           echo "✅ FTP secrets verified"
 
-      - name: 📦 Install dependencies
-        run: |
-          echo "Installing production dependencies..."
-          npm ci --only=production --legacy-peer-deps
-          npm cache clean --force
-          echo "✅ Dependencies installed"
+#       - name: 📦 Install dependencies
+#         run: |
+#           echo "Installing production dependencies..."
+#           npm ci --only=production --legacy-peer-deps
+#           npm cache clean --force
+#           echo "✅ Dependencies installed"
 
-      - name: 🧹 Prepare deployment package
-        run: |
-          echo "Preparing deployment package..."
-          rm -rf deployment
-          mkdir -p deployment
+#       - name: 🧹 Prepare deployment package
+#         run: |
+#           echo "Preparing deployment package..."
+#           rm -rf deployment
+#           mkdir -p deployment
 
-          # Copy all files except excluded ones
-          rsync -av --exclude='node_modules' \
-                    --exclude='.git' \
-                    --exclude='test' \
-                    --exclude='.github' \
-                    --exclude='deployment' \
-                    ./ ./deployment/
+#           # Copy all files except excluded ones
+#           rsync -av --exclude='node_modules' \
+#                     --exclude='.git' \
+#                     --exclude='test' \
+#                     --exclude='.github' \
+#                     --exclude='deployment' \
+#                     ./ ./deployment/
 
-          echo "📦 Deployment package contents:"
-          ls -la deployment/
+#           echo "📦 Deployment package contents:"
+#           ls -la deployment/
 
-      - name: 📤 Deploy via FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./deployment/
-          server-dir: public_html/myapp/
-          exclude: |
-            node_modules/**
-            test/**
-            .git*
-            .github/**
-            deployment/**
-          dangerous-clean-slate: false
-          log-level: verbose
+#       - name: 📤 Deploy via FTP
+#         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+#         with:
+#           server: ${{ secrets.FTP_SERVER }}
+#           username: ${{ secrets.FTP_USERNAME }}
+#           password: ${{ secrets.FTP_PASSWORD }}
+#           local-dir: ./deployment/
+#           server-dir: public_html/myapp/
+#           exclude: |
+#             node_modules/**
+#             test/**
+#             .git*
+#             .github/**
+#             deployment/**
+#           dangerous-clean-slate: false
+#           log-level: verbose
 
-      - name: 📋 Deployment Summary
-        run: |
-          echo ""
-          echo "🎉 DEPLOYMENT COMPLETED SUCCESSFULLY!"
-          echo "======================================"
-          echo "🌐 Application deployed to /benzback/"
-          echo "🔗 Live URL: https://benzflex.com"
+#       - name: 📋 Deployment Summary
+#         run: |
+#           echo ""
+#           echo "🎉 DEPLOYMENT COMPLETED SUCCESSFULLY!"
+#           echo "======================================"
+#           echo "🌐 Application deployed to /benzback/"
+#           echo "🔗 Live URL: https://benzflex.com"

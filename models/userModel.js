@@ -39,6 +39,7 @@ userSchema.methods.createOtp = function () {
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   this.otp = crypto.createHash("sha256").update(otp).digest("hex");
   this.otpExpires = Date.now() + 3 * 60 * 1000; // 10 minutes
+  console.log(this.otp);
   return otp; // raw OTP to send via SMS/Email
 };
 

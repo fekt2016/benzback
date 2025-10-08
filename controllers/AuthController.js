@@ -58,14 +58,13 @@ exports.signup = catchAsync(async (req, res, next) => {
     phoneVerified: false,
   });
 
-  //   try {
-  //     await sendOTP(phone, otp);
-  //   } catch (err) {
-  //     console.log(err);
-  //     return next(
-  //       new AppError("Account created but failed to send OTP SMS", 500)
-  //     );
-  //   }
+  try {
+  } catch (err) {
+    console.log(err);
+    return next(
+      new AppError("Account created but failed to send OTP SMS", 500)
+    );
+  }
   res.status(200).json({
     status: "success",
     message: "Account created! Please verify with the OTP sent to your phone",
@@ -133,36 +132,6 @@ exports.login = catchAsync(async (req, res, next) => {
     otp: otp,
   });
 });
-exports.resendOtp = catchAsync(async (req, res, next) => {
-  const { phone } = req.body;
-  console.log("phone", phone);
-
-  if (!phone) {
-    return next(new AppError("Phone number is required", 400));
-  }
-
-  // Find user by phone
-  const user = await User.findOne({ phone });
-  if (!user) {
-    return next(new AppError("No user found with this phone number", 404));
-  }
-
-  // Generate new OTP
-  const otp = generateOTP();
-  user.otp = otp;
-  user.otpExpires = Date.now() + 3 * 60 * 1000; // 10 min expiry
-  await user.save({ validateBeforeSave: false });
-
-  // Send OTP via SMS (or console log for demo)
-  // await sendSms(user.phone, `Your OTP is ${otp}`);
-
-  res.status(200).json({
-    status: "success",
-    message: "New OTP has been sent to your phone",
-    loginId: user._id, // frontend uses this for verifyOtp
-    otp,
-  });
-});
 
 exports.protect = catchAsync(async (req, res, next) => {
   // 1) Get token from cookies or Authorization header
@@ -216,5 +185,111 @@ exports.getMe = catchAsync(async (req, res, next) => {
   res.status(200).json({
     status: "success",
     data: { user },
+  });
+});
+exports.logout = catchAsync(async (req, res, next) => {
+  const token = extractToken(req);
+
+  res.cookie("jwt", "loggedout", {
+    expires: new Date(Date.now() + 10 * 1000),
+    httpOnly: true,
+  });
+  const successResponse = {
+    status: "success",
+    message: "Logged out successfully",
+    action: "clearLocalStorage",
+  };
+  if (!token) {
+    return res.status(200).json(successResponse);
+  }
+  let decoded;
+  try {
+    decoded = jwt.verify(token, process.env.JWT_SECRET);
+  } catch (error) {
+    return res.status(200).json(successResponse);
+  }
+
+  const user = await User.findOne({ _id: decoded.id });
+  if (!user) {
+    return res.status(200).json(successResponse);
+  }
+
+  try {
+    const expiresAt = decoded?.exp
+      ? new Date(decoded.exp * 1000)
+      : new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    // Add the token to the blacklist
+    // const black = await TokenBlacklist.create({
+    //   token,
+    //   user: decoded.id,
+    //   userType: "user",
+    //   expiresAt,
+    //   reason: "logout",
+    // });
+
+    return res.status(200).json(successResponse);
+  } catch (error) {
+    console.error("Logout processing error:", error);
+
+    // Handle duplicate key error (if the same token is being blacklisted again)
+    if (error.code === 11000) {
+      return res.status(200).json(successResponse);
+    }
+
+    // Log the error
+
+    return res.status(200).json({
+      ...successResponse,
+      message: "Logged out with minor issues",
+    });
+  }
+});
+exports.resendOtp = catchAsync(async (req, res, next) => {
+  const { phone } = req.body;
+
+  if (!phone) {
+    return next(new AppError("Phone number is required", 400));
+  }
+
+  const user = await User.findOne({ phone });
+  if (!user) {
+    return next(new AppError("No user found with this phone number", 404));
+  }
+
+  // Generate OTP directly in controller
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
+  const otpExpires = new Date(Date.now() + 3 * 60 * 1000);
+
+  console.log("🆕 Generated OTP:", {
+    plain: otp,
+    hashed: hashedOtp,
+    expires: otpExpires,
+  });
+
+  // Update using findByIdAndUpdate (more reliable)
+  const updatedUser = await User.findByIdAndUpdate(
+    user._id,
+    {
+      otp: hashedOtp,
+      otpExpires: otpExpires,
+    },
+    {
+      new: true, // Return updated document
+      runValidators: false,
+    }
+  ).select("+otp +otpExpires");
+
+  console.log("📄 Updated user:", {
+    otp: updatedUser.otp,
+    otpExpires: updatedUser.otpExpires,
+  });
+
+  res.status(200).json({
+    status: "success",
+    message: "New OTP has been sent to your phone",
+    loginId: user._id,
+    otp,
   });
 });

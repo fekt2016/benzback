@@ -10,6 +10,7 @@ const notificationRouter = require("./routes/notificationRoutes");
 const driverRouter = require("./routes/driverRoutes");
 const bookingRouter = require("./routes/bookingRoutes");
 const paymentRouter = require("./routes/paymentRoutes");
+const reviewRouter = require("./routes/reviewRoutes");
 
 const cookieParser = require("cookie-parser");
 const cloudinary = require("cloudinary").v2;
@@ -76,6 +77,7 @@ app.use("/api/v1/notifications", notificationRouter);
 app.use("/api/v1/drivers", driverRouter);
 app.use("/api/v1/bookings", bookingRouter);
 app.use("/api/v1/payment", paymentRouter);
+app.use("/api/v1/reviews", reviewRouter);
 
 app.use((err, req, res, next) => {
   console.error(err.stack);

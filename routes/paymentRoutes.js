@@ -9,4 +9,10 @@ router.post(
   authController.restrictTo("user"),
   paymentController.createStripePayment
 );
+
+router.get(
+  "/confirmation/:bookingId",
+  authController.restrictTo("user"),
+  paymentController.getBookingConfirmation
+);
 module.exports = router;

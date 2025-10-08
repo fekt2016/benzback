@@ -16,6 +16,16 @@ router.post(
   bookingController.createBooking
 );
 router.get(
+  "/my-bookings",
+  authController.restrictTo("user"),
+  bookingController.getUserBookings
+);
+router.patch(
+  "/cancel/:id",
+  authController.restrictTo("user"),
+  bookingController.cancelBooking
+);
+router.get(
   "/:id",
   authController.restrictTo("user"),
   bookingController.getBooking
@@ -28,4 +38,11 @@ router.post(
   processBookingFiles,
   bookingController.addBookingDriver
 );
+
+router.post(
+  "/:id/check-in",
+  authController.restrictTo("user"),
+  bookingController.checkInBooking
+);
+
 module.exports = router;

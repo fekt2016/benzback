@@ -74,26 +74,7 @@ const carSchema = new mongoose.Schema(
       },
     ],
 
-    // ⭐ Rating system
-    ratings: [
-      {
-        user: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "User",
-          required: true,
-        },
-        rating: {
-          type: Number,
-          min: 1,
-          max: 5,
-          required: true,
-        },
-        review: {
-          type: String,
-          trim: true,
-        },
-      },
-    ],
+    // ⭐ Remove the embedded ratings array and keep only aggregated data
     averageRating: {
       type: Number,
       default: 0,
@@ -104,20 +85,20 @@ const carSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // Optional: Store last few reviews for quick access
+    recentReviews: [
+      {
+        user: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+        },
+        rating: Number,
+        comment: String,
+        createdAt: Date,
+      },
+    ],
   },
   { timestamps: true }
 );
-
-// 🔹 Middleware to auto-calc average rating
-carSchema.methods.updateRatingStats = function () {
-  if (this.ratings.length > 0) {
-    const sum = this.ratings.reduce((acc, r) => acc + r.rating, 0);
-    this.averageRating = sum / this.ratings.length;
-    this.ratingCount = this.ratings.length;
-  } else {
-    this.averageRating = 0;
-    this.ratingCount = 0;
-  }
-};
 
 module.exports = mongoose.model("Car", carSchema);
