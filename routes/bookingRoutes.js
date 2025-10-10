@@ -44,5 +44,11 @@ router.post(
   authController.restrictTo("user"),
   bookingController.checkInBooking
 );
-
+router.patch(
+  "/:id/driver-documents",
+  authController.restrictTo("user"),
+  uploadBookingFiles,
+  processBookingFiles,
+  bookingController.UpdateBookingDriver
+);
 module.exports = router;

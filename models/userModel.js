@@ -10,6 +10,31 @@ const userSchema = new mongoose.Schema(
     password: { type: String, required: true, minlength: 6, select: false },
     role: { type: String, enum: ["user", "admin"], default: "user" },
 
+    // New address field
+    address: {
+      type: String,
+      trim: true,
+    },
+    dateOfBirth: {
+      type: Date,
+      validate: {
+        validator: function (dob) {
+          const ageDiff = Date.now() - dob.getTime();
+          const age = new Date(ageDiff).getUTCFullYear() - 1970;
+          return age >= 18;
+        },
+        message: "User must be at least 18 years old.",
+      },
+    },
+    // New favorite car field
+    favouriteCar: {
+      make: { type: String, trim: true },
+      model: { type: String, trim: true },
+      year: { type: Number },
+      color: { type: String, trim: true },
+      licensePlate: { type: String, trim: true },
+    },
+
     otp: { type: String, select: false },
     otpExpires: { type: Date, select: false },
 
@@ -67,6 +92,15 @@ userSchema.methods.changedPasswordAfter = function (JWTTimestamp) {
     return JWTTimestamp < changedTimestamp;
   }
   return false;
+};
+userSchema.methods.createPasswordResetToken = function () {
+  const resetToken = crypto.randomBytes(32).toString("hex");
+  this.passwordResetToken = crypto
+    .createHash("sha256")
+    .update(resetToken)
+    .digest("hex");
+  this.passwordResetExpires = Date.now() + 10 * 60 * 1000;
+  return resetToken;
 };
 
 module.exports = mongoose.model("User", userSchema);

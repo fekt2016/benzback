@@ -96,6 +96,47 @@ const notifyBookingCreated = async (bookingData) => {
     throw error;
   }
 };
+
+const notifyPayment = async (bookingData) => {
+  try {
+    const { userId, userName, carName, bookingId, carId, totalPrice } =
+      bookingData;
+    await createUserNotification(userId, {
+      type: NOTIFICATION_TYPES.PAYMENT_SUCCESS,
+      title: "Payment Successful! 🎉",
+      message: `Your payment for ${carName} has been received. Total amount: $${totalPrice}.`,
+      relatedBooking: bookingId, // ✅ Using relatedBooking field
+      metadata: {
+        carId: carId.toString(),
+        carName,
+        userName,
+        userId: userId.toString(),
+        totalPrice,
+        status: "confirmed",
+      },
+    });
+
+    await createAdminNotification({
+      type: NOTIFICATION_TYPES.PAYMENT_SUCCESS,
+      title: "payment sent successfully !!!",
+      message: `${userName} has made payment on ${carName} for $${totalPrice}. Waiting for payment.`,
+      relatedBooking: bookingId, // ✅ Using relatedBooking field
+      metadata: {
+        carId: carId.toString(),
+        carName,
+        userName,
+        userId: userId.toString(),
+        totalPrice,
+        status: "pending_payment",
+      },
+    });
+    // User notification}
+  } catch (error) {
+    console.error("Error in notifyPayment:", error);
+    throw error;
+  }
+};
+
 module.exports = {
   NOTIFICATION_TYPES,
   notifyBookingCreated,

@@ -54,13 +54,7 @@ exports.createBooking = catchAsync(async (req, res, next) => {
     returnDate,
     carDoc.pricePerDay
   );
-  // const pickup = new Date(pickupDate);
-  // const returnD = new Date(returnDate);
-  // const days = Math.ceil((returnD - pickup) / (1000 * 60 * 60 * 24));
-  // if (isNaN(days) || days <= 0) {
-  //   return next(new AppError("Return date must be after pickup date", 400));
-  // }
-  // const totalPrice = days * carDoc.pricePerDay;
+
   const session = await mongoose.startSession();
   try {
     let driver;
@@ -144,7 +138,7 @@ exports.createBooking = catchAsync(async (req, res, next) => {
         userId: req.user.id,
         userName: req.user.name || "Customer",
         carName: `${carDoc.name} ${carDoc.model}`,
-        bookingId: createdBooking._id,
+        bookingId: Booking._id,
         carId: carDoc._id,
         totalPrice,
       });
@@ -485,5 +479,200 @@ exports.checkInBooking = catchAsync(async (req, res, next) => {
     return next(new AppError("Check-in failed. Please try again.", 500));
   } finally {
     session.endSession();
+  }
+});
+
+exports.UpdateBookingDriver = catchAsync(async (req, res, next) => {
+  const { id: bookingId } = req.params;
+  const {
+    pickupDate,
+    returnDate,
+    pickupLocation,
+    driverId, // existing driver
+    licenseImage, // if creating new driver
+    insuranceImage, // if creating new driver
+    name, // driver name (optional for new driver)
+  } = req.body;
+
+  const session = await mongoose.startSession();
+
+  try {
+    let booking = await Booking.findById(bookingId).session(session);
+    if (!booking) {
+      await session.endSession();
+      return next(new AppError("Booking not found", 404));
+    }
+
+    // Store original values for comparison
+    const originalDriver = booking.driver;
+    const originalStatus = booking.status;
+
+    if (pickupDate) booking.pickupDate = pickupDate;
+    if (returnDate) booking.returnDate = returnDate;
+    if (pickupLocation) booking.pickupLocation = pickupLocation;
+
+    let driver;
+    let isNewDriver = false;
+    let driverVerified = false;
+
+    await session.withTransaction(async () => {
+      if (driverId) {
+        // Using existing driver
+        driver = await Driver.findById(driverId).session(session);
+        if (!driver) {
+          throw new AppError("Driver not found", 404);
+        }
+
+        driverVerified = driver.verified === true;
+        booking.driver = driverId;
+
+        // Update status based on driver verification
+        if (driverVerified && booking.status !== "pending_payment") {
+          booking.status = "pending_payment";
+          console.log(
+            `Updated booking status to pending_payment for verified driver: ${driverId}`
+          );
+        } else if (
+          !driverVerified &&
+          booking.status !== "verification_pending"
+        ) {
+          booking.status = "verification_pending";
+          console.log(
+            `Updated booking status to verification_pending for unverified driver: ${driverId}`
+          );
+        }
+      } else if (licenseImage && insuranceImage) {
+        // Creating new driver
+        isNewDriver = true;
+        const [newDriver] = await Driver.create(
+          [
+            {
+              name: name || `Driver ${Date.now()}`,
+              user: req.user._id,
+              isDefault: false,
+              license: {
+                fileUrl: licenseImage,
+                verified: false,
+                uploadedAt: new Date(),
+              },
+              insurance: {
+                fileUrl: insuranceImage,
+                verified: false,
+                uploadedAt: new Date(),
+              },
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+          ],
+          { session }
+        );
+
+        driver = newDriver;
+        driverVerified = false;
+
+        // Add driver to user's drivers array
+        await User.findByIdAndUpdate(
+          req.user._id,
+          {
+            $push: { drivers: driver._id },
+          },
+          { session }
+        );
+
+        booking.driver = driver._id;
+
+        // Always set to verification_pending for new drivers
+        if (booking.status !== "verification_pending") {
+          booking.status = "verification_pending";
+          console.log(
+            `Updated booking status to verification_pending for new driver: ${driver._id}`
+          );
+        }
+      } else {
+        // No driver changes, just update other fields
+        await booking.save({ session });
+        return; // Exit transaction early since no driver changes
+      }
+
+      // Add status history entry if status changed
+      if (originalStatus !== booking.status) {
+        booking.statusHistory = booking.statusHistory || [];
+        booking.statusHistory.push({
+          status: booking.status,
+          timestamp: new Date(),
+          changedBy: req.user._id.toString(),
+          notes: isNewDriver
+            ? "New driver added - awaiting verification"
+            : driverVerified
+            ? "Verified driver assigned - pending payment"
+            : "Unverified driver assigned - awaiting verification",
+        });
+      }
+
+      // Add activity log entry for driver update
+      booking.activityLog = booking.activityLog || [];
+      booking.activityLog.push({
+        action: isNewDriver ? "driver_added" : "driver_updated",
+        timestamp: new Date(),
+        performedBy: req.user._id.toString(),
+        details: {
+          previousDriver: originalDriver,
+          newDriver: driver._id,
+          previousStatus: originalStatus,
+          newStatus: booking.status,
+          driverVerified: driverVerified,
+          isNewDriver: isNewDriver,
+        },
+        ipAddress: req.ip,
+      });
+
+      await booking.save({ session });
+    });
+
+    await session.endSession();
+
+    // Populate the updated booking
+    await booking.populate([
+      {
+        path: "driver",
+        select: "name license insurance verified isDefault createdAt",
+      },
+      {
+        path: "car",
+        select: "make model pricePerDay images year licensePlate",
+      },
+      {
+        path: "user",
+        select: "name email phone",
+      },
+    ]);
+
+    // Prepare response message based on what happened
+    let message = "Booking updated successfully";
+    if (isNewDriver) {
+      message =
+        "New driver added and booking status updated to verification pending";
+    } else if (driverVerified) {
+      message =
+        "Verified driver assigned and booking status updated to pending payment";
+    } else if (driverId) {
+      message = "Driver updated - awaiting verification";
+    }
+
+    res.status(200).json({
+      status: "success",
+      message,
+      data: {
+        booking,
+        statusUpdated: originalStatus !== booking.status,
+        newStatus: booking.status,
+        driverVerified: driverVerified,
+        isNewDriver: isNewDriver,
+      },
+    });
+  } catch (error) {
+    await session.endSession();
+    console.error("Error updating booking driver:", error);
+    next(error);
   }
 });

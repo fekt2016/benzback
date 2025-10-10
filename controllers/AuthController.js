@@ -8,16 +8,22 @@ const { createSendToken } = require("../utils/createSendToken");
 const validator = require("validator");
 const { isPublicRoute } = require("../utils/publicRoute");
 const { extractToken, verifyToken } = require("../utils/tokenService");
-// const { sendOTP } = require("../services/twilio");
 
 exports.signup = catchAsync(async (req, res, next) => {
   //get form fields from the body
   const { fullName, phone, password, passwordConfirm, email } = req.body;
-  //   console.log(fullName, phone, password, passwordConfirm, email);
 
-  if (!phone || !validateUSPhone(phone)) {
+  let currentPhone = phone.replace(/\D/g, "");
+
+  // 2️⃣ If number starts with "1" (e.g., +1XXXXXXXXXX or 1XXXXXXXXXX), remove it
+  if (currentPhone.length === 11 && currentPhone.startsWith("1")) {
+    currentPhone = currentPhone.slice(1);
+  }
+
+  if (!currentPhone || !validateUSPhone(currentPhone)) {
     return next(new AppError("Please provide a valid US phone number", 400));
   }
+
   if (!password || !passwordConfirm) {
     return next(
       new AppError(
@@ -34,8 +40,9 @@ exports.signup = catchAsync(async (req, res, next) => {
   }
 
   const existingUser = await User.findOne({
-    $or: [{ email }, { phone: phone.replace(/\D/g, "") }],
+    $or: [{ email }, { phone: currentPhone.replace(/\D/g, "") }],
   });
+  console.log(existingUser);
 
   if (existingUser) {
     return next(
@@ -50,7 +57,7 @@ exports.signup = catchAsync(async (req, res, next) => {
   const newUser = await User.create({
     fullName,
     email,
-    phone: phone.replace(/\D/g, ""),
+    phone: currentPhone.replace(/\D/g, ""),
     password,
     passwordConfirm,
     otp: hashedOtp,
@@ -113,14 +120,37 @@ exports.verifyOtp = catchAsync(async (req, res, next) => {
   createSendToken(user, message, 200, res);
 });
 exports.login = catchAsync(async (req, res, next) => {
-  const { phone } = req.body;
-  if (!phone) {
+  const { phone, password } = req.body;
+
+  const curphone = phone.replace(/\D/g, "");
+  console.log(curphone);
+  // 1. Validate phone input
+  if (!curphone) {
     return next(new AppError("Please enter your phone number", 400));
   }
-  if (!validator.isMobilePhone(phone)) {
+  if (!validator.isMobilePhone(curphone)) {
     return next(new AppError("Please enter a valid phone number", 400));
   }
-  let user = await User.findOne({ phone: phone });
+
+  // 2. Find user
+  const user = await User.findOne({ phone: curphone }).select("+password");
+
+  // 3. Check if user exists
+  if (!user) {
+    return next(new AppError("Invalid phone number or password", 401));
+  }
+
+  // 4. Validate password
+  if (!password) {
+    return next(new AppError("Please enter your password", 400));
+  }
+
+  const isPasswordCorrect = await user.correctPassword(password, user.password);
+  if (!isPasswordCorrect) {
+    return next(new AppError("Invalid phone number or password", 401));
+  }
+
+  // 5. Generate OTP and save user
   const otp = user.createOtp();
   await user.save({ validateBeforeSave: false });
 
@@ -129,7 +159,7 @@ exports.login = catchAsync(async (req, res, next) => {
     message: "OTP sent to your phone number!",
     email: user.email,
     name: user.name,
-    otp: otp,
+    otp,
   });
 });
 
@@ -281,15 +311,103 @@ exports.resendOtp = catchAsync(async (req, res, next) => {
     }
   ).select("+otp +otpExpires");
 
-  console.log("📄 Updated user:", {
-    otp: updatedUser.otp,
-    otpExpires: updatedUser.otpExpires,
-  });
-
   res.status(200).json({
     status: "success",
     message: "New OTP has been sent to your phone",
     loginId: user._id,
     otp,
+  });
+});
+exports.updateProfile = catchAsync(async (req, res, next) => {
+  const { fullName, email, phone, dateOfBirth, address } = req.body;
+  const user = await User.findByIdAndUpdate(req.user._id, {
+    fullName,
+    email,
+    phone,
+    dateOfBirth,
+    address,
+  });
+  res.status(200).json({
+    status: "success",
+    message: "Profile updated successfully",
+    data: {
+      user,
+    },
+  });
+});
+
+exports.forgotPassword = catchAsync(async (req, res, next) => {
+  const { email } = req.body;
+  const user = await User.findOne({ email });
+  if (!user) {
+    return next(new AppError("No user found with that email", 404));
+  }
+
+  const resetToken = user.createPasswordResetToken();
+  await user.save({ validateBeforeSave: false });
+
+  // send email logic here
+  await sendEmail({
+    to: user.email,
+    subject: "Your password reset link",
+    text: `Click here to reset: ${req.protocol}://${req.get(
+      "host"
+    )}/reset/${resetToken}`,
+  });
+
+  res.status(200).json({
+    status: "success",
+    message: "Password reset link sent!",
+  });
+});
+exports.resetPassword = catchAsync(async (req, res, next) => {});
+exports.updatePassword = catchAsync(async (req, res, next) => {
+  const { currentPassword, newPassword, newPasswordConfirm } = req.body;
+  if (!currentPassword || !newPassword || !newPasswordConfirm) {
+    return next(
+      new AppError("Please provide current password and new password", 400)
+    );
+  }
+  if (newPassword !== newPasswordConfirm) {
+    return next(
+      new AppError("New password and confirm password do not match", 400)
+    );
+  }
+  const user = await User.findById(req.user._id).select("+password");
+  if (!user) {
+    return next(new AppError("No user found with that id", 404));
+  }
+  if (!(await user.correctPassword(currentPassword, user.password))) {
+    return next(new AppError("Current password is incorrect", 401));
+  }
+  user.password = newPassword;
+
+  await user.save();
+  res.status(200).json({
+    status: "success",
+    message: "Password updated successfully",
+  });
+  if (user.passwordChangedAt) {
+    user.passwordChangedAt = Date.now() - 1000;
+  }
+});
+exports.uploadAvatar = catchAsync(async (req, res, next) => {
+  console.log(req.body);
+  const { avatar } = req.body;
+  if (!avatar) {
+    return next(new AppError("Please provide avatar", 400));
+  }
+
+  const user = await User.findById(req.user._id);
+
+  if (!user) {
+    return next(new AppError("No user found with that id", 404));
+  }
+
+  user.avatar = avatar;
+  await user.save();
+  res.status(200).json({
+    status: "success",
+    message: "Avatar updated successfully",
   });
 });

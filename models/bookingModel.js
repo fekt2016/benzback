@@ -379,6 +379,7 @@ const bookingSchema = new mongoose.Schema(
         changedBy: {
           type: String,
           required: true,
+          default: "system",
         },
         notes: {
           type: String,

@@ -6,7 +6,7 @@ const Payment = require("../models/paymentModel");
 
 exports.createStripePayment = catchAsync(async (req, res, next) => {
   const { metadata } = req.body;
-  console.log("metadata", metadata);
+
   const { booking_id: bookingId } = metadata;
 
   try {
@@ -23,9 +23,10 @@ exports.createStripePayment = catchAsync(async (req, res, next) => {
     const booking = await Booking.findByIdAndUpdate(bookingId, {
       stripeSessionId: session.id,
     });
-    console.log("booking", booking);
-
-    res.json({ id: session.id });
+    if (!booking) {
+      return next(new AppError("Booking not found", 404));
+    }
+    res.status(200).json({ id: session.id });
   } catch (error) {
     console.error("Stripe session creation error:", error);
 
@@ -50,7 +51,7 @@ exports.getBookingConfirmation = catchAsync(async (req, res, next) => {
 
     let session = null;
     let paymentStatus = "unpaid"; // Default status
-    console.log("stripe", booking.stripeSessionId);
+
     if (booking.stripeSessionId) {
       try {
         // Fixed: Corrected the typo from 'session' to 'sessions'
