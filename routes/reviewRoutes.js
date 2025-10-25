@@ -8,10 +8,11 @@ router.use(authController.protect);
 router
   .route("/")
   .post(authController.restrictTo("user"), reviewController.createReview);
+
 router.get(
-  "/user-reviews",
+  "/car/:carId",
   authController.restrictTo("user"),
-  reviewController.getUserReviews
+  reviewController.getCarReviews
 );
 
 module.exports = router;

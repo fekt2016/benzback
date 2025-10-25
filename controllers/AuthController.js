@@ -1,199 +1,271 @@
 const { validateUSPhone } = require("../utils/helper");
-const catchAsync = require("../utils/catchAsync");
+const {catchAsync, catchAsyncWithMemory } = require("../utils/catchAsync");
 const { generateOTP } = require("../utils/OtpSystem");
 const crypto = require("crypto");
 const User = require("../models/userModel");
 const AppError = require("../utils/appError");
 const { createSendToken } = require("../utils/createSendToken");
 const validator = require("validator");
-const { isPublicRoute } = require("../utils/publicRoute");
 const { extractToken, verifyToken } = require("../utils/tokenService");
+const emailServices = require("../utils/emailServices");
+const TokenBlacklist = require("../models/TokenBlacklistModel");
+const { addToTokenBlacklist, isTokenBlacklisted } = require("../services/tokenBlacklistService");
+const { generatePasswordResetData } = require("../services/helper");
+const Preference = require("../models/preferenceModel");
 
 exports.signup = catchAsync(async (req, res, next) => {
-  //get form fields from the body
-  const { fullName, phone, password, passwordConfirm, email } = req.body;
-
-  let currentPhone = phone.replace(/\D/g, "");
-
-  // 2️⃣ If number starts with "1" (e.g., +1XXXXXXXXXX or 1XXXXXXXXXX), remove it
-  if (currentPhone.length === 11 && currentPhone.startsWith("1")) {
-    currentPhone = currentPhone.slice(1);
-  }
-
-  if (!currentPhone || !validateUSPhone(currentPhone)) {
-    return next(new AppError("Please provide a valid US phone number", 400));
-  }
-
-  if (!password || !passwordConfirm) {
-    return next(
-      new AppError(
-        "Please provide both password and password confirmation",
-        400
-      )
-    );
-  }
-  if (password !== passwordConfirm) {
-    return next(new AppError("Passwords do not match", 400));
-  }
-  if (!email) {
-    return next(new AppError("Email is required for OTP verification", 400));
-  }
-
-  const existingUser = await User.findOne({
-    $or: [{ email }, { phone: currentPhone.replace(/\D/g, "") }],
-  });
-  console.log(existingUser);
-
-  if (existingUser) {
-    return next(
-      new AppError("User with this email or phone already exists", 400)
-    );
-  }
-
-  const otp = generateOTP();
-  const otpExpires = Date.now() + 10 * 60 * 10000;
-  const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
-
-  const newUser = await User.create({
-    fullName,
-    email,
-    phone: currentPhone.replace(/\D/g, ""),
-    password,
-    passwordConfirm,
-    otp: hashedOtp,
-    otpExpires,
-    phoneVerified: false,
-  });
-
   try {
-  } catch (err) {
-    console.log(err);
-    return next(
-      new AppError("Account created but failed to send OTP SMS", 500)
-    );
-  }
-  res.status(200).json({
-    status: "success",
-    message: "Account created! Please verify with the OTP sent to your phone",
-    data: {
-      user: {
-        id: newUser._id,
+    const { timeZone,dateOfBirth,fullName, phone, password, passwordConfirm, email } = req.body;
+
+    let currentPhone = phone.replace(/\D/g, "");
+
+    if (currentPhone.length === 11 && currentPhone.startsWith("1")) {
+      currentPhone = currentPhone.slice(1);
+    }
+
+    if (!currentPhone || !validateUSPhone(currentPhone)) {
+      return next(new AppError("Please provide a valid US phone number", 400));
+    }
+
+    if (!password || !passwordConfirm) {
+      return next(
+        new AppError(
+          "Please provide both password and password confirmation",
+          400
+        )
+      );
+    }
+if(dateOfBirth<18){
+  return next(new AppError("You must be at least 18 years old to sign up", 400));
+}
+    if (password !== passwordConfirm) {
+      return next(new AppError("Passwords do not match", 400));
+    }
+
+    if (!email) {
+      return next(new AppError("Email is required for OTP verification", 400));
+    }
+
+    const existingUser = await User.findOne({
+      $or: [{ email }, { phone: currentPhone.replace(/\D/g, "") }],
+    }).lean();
+
+    if (existingUser) {
+      return next(
+        new AppError("User with this email or phone already exists", 400)
+      );
+    }
+
+    const otp = generateOTP();
+    const otpExpires = Date.now() + 10 * 60 * 1000; // Fixed: 10 minutes
+    const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
+
+    // Cache OTP for quick access
+
+    const newUser = await User.create({
+      fullName,
+      email,
+      dateOfBirth,
+      phone: currentPhone.replace(/\D/g, ""),
+      password,
+      passwordConfirm,
+      otp: hashedOtp,
+      otpExpires,
+      phoneVerified: false,
+      timeZone,
+    });
+    const preferences = await Preference.create({ user: newUser._id });
+    newUser.preferences = preferences._id;
+     await newUser.save();
+
+try {
+      await emailServices.sendSignupOTP({
+        email: newUser.email,
         name: newUser.fullName,
-        phone: newUser.phone,
-        email,
-      },
-      otp: otp,
-    },
-  });
-});
-exports.verifyOtp = catchAsync(async (req, res, next) => {
-  const { phone, otp } = req.body;
+        otpCode: otp,
+        expiryMinutes: 10
+      });
+    } catch (emailError) {
+      console.error('Failed to send welcome OTP email:', emailError);
+      // Don't fail the signup if email fails, just log it
+    }
 
-  if (!phone || !otp) {
-    return next(new AppError("Please provide phone and OTP", 400));
+
+    // Clean response data
+    const userResponse = {
+      id: newUser._id,
+      name: newUser.fullName,
+      phone: newUser.phone,
+      email: newUser.email,
+    };
+
+    res.status(200).json({
+      status: "success",
+      message: "Account created! Please verify with the OTP sent to your phone",
+      data: { user: userResponse, otp },
+    });
+  } catch (error) {
+    next(error);
   }
-  const normalizedPhone = phone.replace(/\D/g, "");
-  const user = await User.findOne({ phone: normalizedPhone }).select(
-    "+otp +otpExpires"
-  );
-  if (!user) {
-    return next(new AppError("No user found with that phone number", 404));
-  }
-  if (!user.verifyOtp(otp)) {
-    return next(new AppError("OTP is invalid or has expired", 401));
-  }
-  user.otp = undefined;
-  user.otpExpires = undefined;
-
-  let verificationContext = "login";
-  let message = "Logged in successfully";
-  if (user.status === "inactive" && !user.phoneVerified) {
-    user.status = "active";
-    user.phoneVerified = true;
-    verificationContext = "signup";
-    message = "Phone verified successfully! Your account is now active";
-  }
-
-  user.lastActive = new Date();
-  user.verificationContext = verificationContext;
-  await user.save({ validateBeforeSave: false });
-  createSendToken(user, message, 200, res);
-});
-exports.login = catchAsync(async (req, res, next) => {
-  const { phone, password } = req.body;
-
-  const curphone = phone.replace(/\D/g, "");
-  console.log(curphone);
-  // 1. Validate phone input
-  if (!curphone) {
-    return next(new AppError("Please enter your phone number", 400));
-  }
-  if (!validator.isMobilePhone(curphone)) {
-    return next(new AppError("Please enter a valid phone number", 400));
-  }
-
-  // 2. Find user
-  const user = await User.findOne({ phone: curphone }).select("+password");
-
-  // 3. Check if user exists
-  if (!user) {
-    return next(new AppError("Invalid phone number or password", 401));
-  }
-
-  // 4. Validate password
-  if (!password) {
-    return next(new AppError("Please enter your password", 400));
-  }
-
-  const isPasswordCorrect = await user.correctPassword(password, user.password);
-  if (!isPasswordCorrect) {
-    return next(new AppError("Invalid phone number or password", 401));
-  }
-
-  // 5. Generate OTP and save user
-  const otp = user.createOtp();
-  await user.save({ validateBeforeSave: false });
-
-  res.status(200).json({
-    status: "success",
-    message: "OTP sent to your phone number!",
-    email: user.email,
-    name: user.name,
-    otp,
-  });
 });
 
-exports.protect = catchAsync(async (req, res, next) => {
-  // 1) Get token from cookies or Authorization header
-  const token = extractToken(req);
+exports.verifyOtp = catchAsync( async (req, res, next) => {
+  try {
+    const { phone, otp } = req.body;
 
-  if (!token) {
-    return next(
-      new AppError("You are not logged in! Please log in to get access.", 401)
+    if (!phone || !otp) {
+      return next(new AppError("Please provide phone and OTP", 400));
+    }
+
+    const normalizedPhone = phone.replace(/\D/g, "");
+
+    const user = await User.findOne({ phone: normalizedPhone }).select(
+      "+otp +otpExpires"
     );
+    if (!user) {
+      return next(new AppError("No user found with that phone number", 404));
+    }
+
+    if (!user.verifyOtp(otp)) {
+      return next(new AppError("OTP is invalid or has expired", 401));
+    }
+
+    // Clear OTP fields
+    user.otp = undefined;
+    user.otpExpires = undefined;
+
+    let verificationContext = "login";
+    let message = "Logged in successfully";
+
+    if (user.status === "pending" ) {
+      user.status = "active";
+      user.phoneVerified = true;
+      verificationContext = "signup";
+      message = "Phone verified successfully! Your account is now active";
+    }
+
+    user.lastActive = new Date();
+    user.verificationContext = verificationContext;
+
+    await user.save({ validateBeforeSave: false });
+
+    createSendToken(user, message, 200, res);
+  } catch (error) {
+    next(error);
   }
-
-  // 2) Verify token
-  const { decoded, error } = verifyToken(token);
-  if (error) {
-    return next(
-      new AppError("Invalid or expired token. Please log in again.", 401)
-    );
-  }
-
-  // 3) Check if user still exists
-  const currentUser = await User.findById(decoded.id);
-  if (!currentUser) {
-    return next(
-      new AppError("The user belonging to this token no longer exists.", 401)
-    );
-  }
-
-  // 4) Attach user to request for access in controllers
-  req.user = currentUser;
-
-  next();
 });
+exports.login = catchAsync( async (req, res, next) => {
+  try {
+    const { phone, password } = req.body;
+    const curphone = phone.replace(/\D/g, "");
+
+    // Validation
+    if (!curphone || !validator.isMobilePhone(curphone)) {
+      return next(new AppError("Please enter a valid phone number", 400));
+    }
+    if (!password) return next(new AppError("Please enter your password", 400));
+
+    // Get user WITHOUT document methods - just raw data
+    const user = await User.findOne({ phone: curphone })
+      .select("+password email fullName")
+      .lean();
+
+    if (!user) {
+      return next(new AppError("Invalid phone number or password", 401));
+    }
+
+    // Use direct bcrypt comparison instead of Mongoose methods
+    const bcrypt = require("bcryptjs");
+    const isPasswordCorrect = await bcrypt.compare(password, user.password);
+
+    if (!isPasswordCorrect) {
+      return next(new AppError("Invalid phone number or password", 401));
+    }
+
+    // Generate OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
+
+    // Use native MongoDB driver for update to avoid Mongoose overhead
+    const collection = User.collection;
+    await collection.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          otp: hashedOtp,
+          otpExpires: new Date(Date.now() + 10 * 60 * 1000),
+          lastActive: new Date(),
+        },
+      }
+    );
+
+    // Async email with no memory retention
+    const emailData = {
+      email: user.email,
+      name: user.fullName,
+      otpCode: otp,
+      purpose: "login verification",
+    };
+
+    process.nextTick(() => {
+      emailServices
+        .sendOTPVerification({ ...emailData })
+        .catch((err) => console.error("Email error:", err.message));
+    });
+
+    res.status(200).json({
+      status: "success",
+      message: "OTP sent to your phone number!",
+      email: user.email,
+      name: user.fullName,
+    });
+  } catch (error) {
+    memory.error("Unexpected error");
+    next(error);
+  }
+});
+
+exports.protect = catchAsync( async (req, res, next) => {
+  try {
+    const token = extractToken(req);
+
+    if (!token) {
+      
+      return next(
+        new AppError("You are not logged in! Please log in to get access.", 401)
+      );
+    }
+
+    const { decoded, error } = verifyToken(token);
+
+    if (error) {
+      return next(
+        new AppError("Invalid or expired token. Please log in again.", 401)
+      );
+    }
+
+    const currentUser = await User.findById(decoded.id).lean();
+
+    if (!currentUser) {
+      return next(
+        new AppError("The user belonging to this token no longer exists.", 401)
+      );
+    }
+
+    // Attach minimal user data to request
+    req.user = {
+      _id: currentUser._id,
+      email: currentUser.email,
+      role: currentUser.role,
+      fullName: currentUser.fullName,
+    };
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
 exports.restrictTo = (...roles) => {
   return (req, res, next) => {
     if (!req.user?.role || !roles.includes(req.user.role)) {
@@ -206,208 +278,537 @@ exports.restrictTo = (...roles) => {
 };
 
 exports.getMe = catchAsync(async (req, res, next) => {
-  const user = await User.findById(req.user._id).select("-password -__v");
+ 
 
-  if (!user) {
-    return next(new AppError("User not found", 404));
+  try {
+    const user = await User.findById(req.user._id)
+      .select("-password -__v -otp -otpExpires -passwordChangedAt")
+      .lean();
+
+    if (!user) {
+      return next(new AppError("User not found", 404));
+    }
+
+    res.status(200).json({
+      status: "success",
+      data: { user },
+    });
+  } catch (error) {
+    next(error);
   }
-
-  res.status(200).json({
-    status: "success",
-    data: { user },
-  });
 });
+
+
+
 exports.logout = catchAsync(async (req, res, next) => {
-  const token = extractToken(req);
-
-  res.cookie("jwt", "loggedout", {
-    expires: new Date(Date.now() + 10 * 1000),
-    httpOnly: true,
-  });
-  const successResponse = {
-    status: "success",
-    message: "Logged out successfully",
-    action: "clearLocalStorage",
-  };
-  if (!token) {
-    return res.status(200).json(successResponse);
-  }
-  let decoded;
+  let blacklistSuccess = false;
+  
   try {
-    decoded = jwt.verify(token, process.env.JWT_SECRET);
-  } catch (error) {
-    return res.status(200).json(successResponse);
-  }
+    const token = extractToken(req);
 
-  const user = await User.findOne({ _id: decoded.id });
-  if (!user) {
-    return res.status(200).json(successResponse);
-  }
+    // Clear cookies
+    res.cookie("jwt", "loggedout", {
+      expires: new Date(Date.now() + 10 * 1000),
+      httpOnly: true,
+    });
 
-  try {
-    const expiresAt = decoded?.exp
-      ? new Date(decoded.exp * 1000)
-      : new Date(Date.now() + 24 * 60 * 60 * 1000);
+    res.cookie("refreshToken", "loggedout", {
+      expires: new Date(Date.now() + 10 * 1000),
+      httpOnly: true,
+    });
 
-    // Add the token to the blacklist
-    // const black = await TokenBlacklist.create({
-    //   token,
-    //   user: decoded.id,
-    //   userType: "user",
-    //   expiresAt,
-    //   reason: "logout",
-    // });
+    const successResponse = {
+      status: "success",
+      message: "Logged out successfully",
+      action: "clearLocalStorage",
+    };
 
-    return res.status(200).json(successResponse);
-  } catch (error) {
-    console.error("Logout processing error:", error);
-
-    // Handle duplicate key error (if the same token is being blacklisted again)
-    if (error.code === 11000) {
+    // Early return if no token
+    if (!token) {
+    
       return res.status(200).json(successResponse);
     }
 
-    // Log the error
+    let decoded;
+    let user = null;
 
-    return res.status(200).json({
+    try {
+      const jwt = require("jsonwebtoken");
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+      
+      // Find user only if token is valid
+      user = await User.findOne({ _id: decoded.id }).lean();
+      
+      if (user) {
+        // Blacklist access token
+        await TokenBlacklist.blacklistToken({
+          token: token,
+          user: user._id,
+          expiresAt: new Date(decoded.exp * 1000),
+          tokenType: "access",
+          reason: "logout",
+          ipAddress: req.ip,
+          userAgent: req.get("User-Agent")
+        });
+
+        // Blacklist refresh token if exists
+        const refreshToken = req.cookies.refreshToken;
+        if (refreshToken) {
+          const refreshDecoded = jwt.decode(refreshToken);
+          if (refreshDecoded?.exp) {
+            await TokenBlacklist.blacklistToken({
+              token: refreshToken,
+              user: user._id,
+              expiresAt: new Date(refreshDecoded.exp * 1000),
+              tokenType: "refresh",
+              reason: "logout",
+              ipAddress: req.ip,
+              userAgent: req.get("User-Agent")
+            });
+          }
+        }
+        
+        blacklistSuccess = true;
+        console.log(`✅ Tokens blacklisted for user ${user._id}`);
+      }
+    } catch (tokenError) {
+      // Token verification failed (expired, invalid, etc.)
+      console.log(`ℹ️ Token invalid during logout: ${tokenError.message}`);
+      // We still proceed with successful logout response
+    }
+
+ 
+    res.status(200).json({
       ...successResponse,
-      message: "Logged out with minor issues",
+      blacklisted: blacklistSuccess // Optional: indicate if token was blacklisted
+    });
+
+  } catch (error) {
+    // Log the error but still try to complete the logout
+    console.error("❌ Logout process error:", error);
+    
+    // Even if there's an error, we clear cookies and return success
+    res.cookie("jwt", "loggedout", {
+      expires: new Date(Date.now() + 10 * 1000),
+      httpOnly: true,
+    });
+    
+    res.cookie("refreshToken", "loggedout", {
+      expires: new Date(Date.now() + 10 * 1000),
+      httpOnly: true,
+    });
+
+  
+    res.status(200).json({
+      status: "success",
+      message: "Logged out successfully",
+      action: "clearLocalStorage",
     });
   }
 });
-exports.resendOtp = catchAsync(async (req, res, next) => {
-  const { phone } = req.body;
+exports.resendOtp = catchAsync( async (req, res, next) => {
+  try {
+    const { phone } = req.body;
 
-  if (!phone) {
-    return next(new AppError("Phone number is required", 400));
-  }
-
-  const user = await User.findOne({ phone });
-  if (!user) {
-    return next(new AppError("No user found with this phone number", 404));
-  }
-
-  // Generate OTP directly in controller
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
-  const otpExpires = new Date(Date.now() + 3 * 60 * 1000);
-
-  console.log("🆕 Generated OTP:", {
-    plain: otp,
-    hashed: hashedOtp,
-    expires: otpExpires,
-  });
-
-  // Update using findByIdAndUpdate (more reliable)
-  const updatedUser = await User.findByIdAndUpdate(
-    user._id,
-    {
-      otp: hashedOtp,
-      otpExpires: otpExpires,
-    },
-    {
-      new: true, // Return updated document
-      runValidators: false,
+    if (!phone) {
+      return next(new AppError("Phone number is required", 400));
     }
-  ).select("+otp +otpExpires");
 
-  res.status(200).json({
-    status: "success",
-    message: "New OTP has been sent to your phone",
-    loginId: user._id,
-    otp,
-  });
+    const user = await User.findOne({ phone }).lean();
+    if (!user) {
+      return next(new AppError("No user found with this phone number", 404));
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
+    const otpExpires = new Date(Date.now() + 3 * 60 * 1000);
+
+    // Update user with new OTP
+    await User.findByIdAndUpdate(
+      user._id,
+      {
+        otp: hashedOtp,
+        otpExpires: otpExpires,
+      },
+      { runValidators: false }
+    );
+
+    res.status(200).json({
+      status: "success",
+      message: "New OTP has been sent to your phone",
+      loginId: user._id,
+    });
+  } catch (error) {
+    next(error);
+  }
 });
-exports.updateProfile = catchAsync(async (req, res, next) => {
-  const { fullName, email, phone, dateOfBirth, address } = req.body;
-  const user = await User.findByIdAndUpdate(req.user._id, {
-    fullName,
-    email,
-    phone,
-    dateOfBirth,
-    address,
-  });
-  res.status(200).json({
-    status: "success",
-    message: "Profile updated successfully",
-    data: {
-      user,
-    },
-  });
+
+exports.updateProfile = catchAsync( async (req, res, next) => {
+  try {
+    const { fullName, email, phone, dateOfBirth, address } = req.body;
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      { fullName, email, phone, dateOfBirth, address },
+      { new: true, runValidators: true }
+    ).select("-password -__v -otp -otpExpires");
+
+    if (!updatedUser) {
+      return next(new AppError("No user found with that id", 404));
+    }
+   try{
+     await emailServices.sendProfileUpdateConfirmation({
+  email: updatedUser.email,
+  name: updatedUser.fullName,
+  updatedFields: ['fullName', 'address', 'bio'],
+  timestamp: new Date(),
+  ipAddress: req.ip,
+  userAgent: req.get('User-Agent')
+})
+   }catch(error){
+    console.log(error);
+   }
+
+    res.status(200).json({
+      status: "success",
+      message: "Profile updated successfully",
+      data: { user: updatedUser },
+    });
+  } catch (error) {
+    next(error);
+  }
 });
+
+
 
 exports.forgotPassword = catchAsync(async (req, res, next) => {
   const { email } = req.body;
-  const user = await User.findOne({ email });
+
+  // Validate email presence
+  if (!email) {
+    return next(new AppError('Please provide an email address', 400));
+  }
+
+  // Validate email format
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return next(new AppError('Please provide a valid email address', 400));
+  }
+
+
+  const user = await User.findOne({ email }).select('+passwordResetToken +passwordResetExpires');
+  
+  
   if (!user) {
-    return next(new AppError("No user found with that email", 404));
+    // Log for security monitoring (but don't expose to client)
+   
+    
+    return res.status(200).json({
+      status: "success",
+      message: "If the email exists in our system, you will receive a password reset link shortly.",
+    });
   }
 
-  const resetToken = user.createPasswordResetToken();
-  await user.save({ validateBeforeSave: false });
+  // Check if there's already a valid reset token
+  if (user.passwordResetExpires && user.passwordResetExpires > Date.now()) {
+    const timeLeft = Math.ceil((user.passwordResetExpires - Date.now()) / (60 * 1000));
+    
+    return next(new AppError(
+      `A password reset link has already been sent. Please wait ${timeLeft} minutes before requesting another.`,
+      429
+    ));
+  }
 
-  // send email logic here
-  await sendEmail({
-    to: user.email,
-    subject: "Your password reset link",
-    text: `Click here to reset: ${req.protocol}://${req.get(
-      "host"
-    )}/reset/${resetToken}`,
-  });
+  try {
+    // Generate secure reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenHash = crypto
+      .createHash('sha256')
+      .update(resetToken)
+      .digest('hex');
 
-  res.status(200).json({
-    status: "success",
-    message: "Password reset link sent!",
-  });
+    // Set token and expiry (1 hour from now)
+    user.passwordResetToken = resetTokenHash;
+    user.passwordResetExpires = Date.now() + 60 * 60 * 1000; // 1 hour
+    
+    // Clear any existing reset attempts
+    user.passwordResetAttempts = 0;
+
+    // Save user with reset token
+    await user.save({ validateBeforeSave: false });
+  const emailData = generatePasswordResetData(req, user, resetToken);
+    // Send email asynchronously without blocking response
+    setImmediate(async () => {
+      try {
+        await emailServices.sendPasswordResetEmail(emailData);
+        // Update user with email sent timestamp (optional)
+        await User.findByIdAndUpdate(user._id, {
+          lastPasswordResetEmail: new Date()
+        });
+        
+      } catch (emailError) {
+        console.log('Error sending password reset email:', emailError);
+        // Log email failure but don't expose to user
+        console.error('Password reset email failed:', {
+          email: user.email,
+          error: emailError.message,
+          timestamp: new Date().toISOString()
+        });
+
+        // Reset the token if email fails to prevent unusable tokens
+        await User.findByIdAndUpdate(user._id, {
+          passwordResetToken: undefined,
+          passwordResetExpires: undefined
+        });
+
+        // You might want to implement a retry mechanism or alert system here
+        console.error('Password reset token invalidated due to email delivery failure');
+      }
+    });
+
+    // Log the reset request for security monitoring
+    console.log(`Password reset requested for user: ${user.email}`, {
+      userId: user._id,
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      timestamp: new Date().toISOString()
+    });
+
+    // Send success response
+    res.status(200).json({
+      status: "success",
+      message: "If the email exists in our system, you will receive a password reset link shortly.",
+      // Additional security info for client
+      instructions: "Check your email including spam folder. The link will expire in 1 hour."
+    });
+
+  } catch (error) {
+    // Log detailed error for debugging
+    console.error('Password reset process failed:', {
+      email,
+      error: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString()
+    });
+
+    // Reset token on error to prevent locked accounts
+    if (user && user._id) {
+      await User.findByIdAndUpdate(user._id, {
+        passwordResetToken: undefined,
+        passwordResetExpires: undefined
+      });
+    }
+
+    return next(new AppError(
+      'Unable to process password reset request. Please try again later.',
+      500
+    ));
+  }
 });
-exports.resetPassword = catchAsync(async (req, res, next) => {});
-exports.updatePassword = catchAsync(async (req, res, next) => {
-  const { currentPassword, newPassword, newPasswordConfirm } = req.body;
-  if (!currentPassword || !newPassword || !newPasswordConfirm) {
-    return next(
-      new AppError("Please provide current password and new password", 400)
-    );
-  }
-  if (newPassword !== newPasswordConfirm) {
-    return next(
-      new AppError("New password and confirm password do not match", 400)
-    );
-  }
-  const user = await User.findById(req.user._id).select("+password");
-  if (!user) {
-    return next(new AppError("No user found with that id", 404));
-  }
-  if (!(await user.correctPassword(currentPassword, user.password))) {
-    return next(new AppError("Current password is incorrect", 401));
-  }
-  user.password = newPassword;
 
-  await user.save();
-  res.status(200).json({
-    status: "success",
-    message: "Password updated successfully",
-  });
-  if (user.passwordChangedAt) {
-    user.passwordChangedAt = Date.now() - 1000;
+exports.updatePassword = catchAsync(
+ 
+  async (req, res, next) => {
+    try {
+      const { currentPassword, newPassword, newPasswordConfirm } = req.body;
+
+      if (!currentPassword || !newPassword || !newPasswordConfirm) {
+        return next(
+          new AppError("Please provide current password and new password", 400)
+        );
+      }
+
+      if (newPassword !== newPasswordConfirm) {
+        return next(
+          new AppError("New password and confirm password do not match", 400)
+        );
+      }
+
+      const user = await User.findById(req.user._id).select("+password");
+
+      if (!user) {
+        return next(new AppError("No user found with that id", 404));
+      }
+
+      if (!(await user.correctPassword(currentPassword, user.password))) {
+        return next(new AppError("Current password is incorrect", 401));
+      }
+
+      user.password = newPassword;
+      if (user.passwordChangedAt) {
+        user.passwordChangedAt = Date.now() - 1000;
+      }
+
+      await user.save();
+
+
+      try {
+        const blacklistedCount = await TokenBlacklist.blacklistAllUserTokens(
+          user._id,
+          "password_change",
+          user._id // blacklisted by user themselves
+        );
+       
+      } catch (blacklistError) {
+        // Log the error but don't fail the password update
+        console.error("❌ Failed to blacklist tokens after password change:", blacklistError);
+      }
+
+
+
+      res.status(200).json({
+        status: "success",
+        message: "Password updated successfully",
+      });
+    } catch (error) {
+     
+      next(error);
+    }
+  }
+);
+
+exports.uploadAvatar = catchAsync( async (req, res, next) => {
+  try {
+    const { avatar } = req.body;
+
+    if (!avatar) {
+      return next(new AppError("Please provide avatar", 400));
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { avatar },
+      { new: true }
+    ).select("-password -__v");
+
+    if (!user) {
+      return next(new AppError("No user found with that id", 404));
+    }
+
+    res.status(200).json({
+      status: "success",
+      message: "Avatar updated successfully",
+      data: { user },
+    });
+  } catch (error) {
+    next(error);
   }
 });
-exports.uploadAvatar = catchAsync(async (req, res, next) => {
-  console.log(req.body);
-  const { avatar } = req.body;
-  if (!avatar) {
-    return next(new AppError("Please provide avatar", 400));
+
+
+
+
+exports.resetPassword = catchAsync(async (req, res, next) => {
+  const { token } = req.params;
+  const { password, passwordConfirm: confirmPassword } = req.body;
+
+  // Validate required fields
+  if (!password || !confirmPassword) {
+    return next(new AppError('Please provide password and confirmation', 400));
   }
 
-  const user = await User.findById(req.user._id);
-
-  if (!user) {
-    return next(new AppError("No user found with that id", 404));
+  // Validate password length
+  if (password.length < 8) {
+    return next(new AppError('Password must be at least 8 characters long', 400));
   }
 
-  user.avatar = avatar;
-  await user.save();
-  res.status(200).json({
-    status: "success",
-    message: "Avatar updated successfully",
-  });
+  // Check if passwords match
+  if (password !== confirmPassword) {
+    return next(new AppError('Passwords do not match', 400));
+  }
+
+  // Hash the token to compare with stored hash
+  const hashedToken = crypto
+    .createHash('sha256')
+    .update(token)
+    .digest('hex');
+    console.log(hashedToken)
+
+  try {
+    // Find user with valid reset token
+    const user = await User.findOne({
+      passwordResetToken: hashedToken,
+      passwordResetExpires: { $gt: Date.now() }
+    }).select('+passwordResetToken +passwordResetExpires');
+
+
+
+    if (!user) {
+      return next(new AppError('Password reset token is invalid or has expired', 400));
+    }
+
+    // Check if token is blacklisted
+    const isBlacklisted = await isTokenBlacklisted(hashedToken);
+    if (isBlacklisted) {
+      return next(new AppError('Password reset token has been revoked', 400));
+    }
+
+    // Update user's password
+    user.password = password;
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
+    user.passwordChangedAt = Date.now();
+    
+    // Clear any reset attempts
+    user.passwordResetAttempts = 0;
+
+    // Save the user (this will trigger password validation and hashing)
+    await user.save();
+
+    // Add used token to blacklist to prevent reuse
+    await addToTokenBlacklist(hashedToken, user._id, 'used_for_reset');
+
+    // Invalidate all existing sessions (optional - for enhanced security)
+    user.passwordResetRequired = false;
+    await user.save({ validateBeforeSave: false });
+
+    // Send password reset success email (non-blocking)
+    setImmediate(async () => {
+      try {
+        await emailServices.sendPasswordResetSuccess({
+          email: user.email,
+          name: user.fullName || 'Customer',
+          timestamp: new Date(),
+          // ipAddress: req.ip,
+          // userAgent: req.get('User-Agent')
+        });
+        
+        console.log(`Password reset success email sent to: ${user.email}`);
+      } catch (emailError) {
+        console.error('Failed to send password reset success email:', emailError);
+        // Don't throw error - email failure shouldn't affect the reset process
+      }
+    });
+
+    // Log the successful password reset for security monitoring
+    console.log(`Password reset successful for user: ${user.email}`, {
+      userId: user._id,
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      timestamp: new Date().toISOString()
+    });
+
+    // Send success response
+    res.status(200).json({
+      status: 'success',
+      message: 'Password has been reset successfully. You can now log in with your new password.',
+      redirectTo: '/login'
+    });
+
+  } catch (error) {
+  
+    // Log detailed error for debugging
+    console.error('Password reset process failed:', {
+      token: hashedToken.substring(0, 16) + '...', // Log partial token for security
+      error: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString()
+    });
+
+    return next(new AppError(
+      'Unable to reset password. Please try again or request a new reset link.',
+      500
+    ));
+  }
 });
+

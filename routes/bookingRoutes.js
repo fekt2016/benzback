@@ -5,9 +5,28 @@ const {
   uploadBookingFiles,
   processBookingFiles,
 } = require("../middleware/bookingUpload");
+// const { uploadCheckInImages } = require("../middleware/uploadMiddleware");
 const router = express.Router();
 
 router.use(authController.protect);
+
+// FIXED: Specific routes should come before parameterized routes
+router.get(
+  "/my-bookings",
+  authController.restrictTo("user"),
+  bookingController.getUserBookings
+);
+
+// FIXED: Move /:id/car before /:id
+router.get("/:id/car", bookingController.getCarBooking);
+
+// FIXED: Keep parameterized routes at the bottom
+router.get(
+  "/:id",
+  authController.restrictTo("user"),
+  bookingController.getBooking
+);
+
 router.post(
   "/",
   authController.restrictTo("user"),
@@ -15,20 +34,11 @@ router.post(
   processBookingFiles,
   bookingController.createBooking
 );
-router.get(
-  "/my-bookings",
-  authController.restrictTo("user"),
-  bookingController.getUserBookings
-);
+
 router.patch(
   "/cancel/:id",
   authController.restrictTo("user"),
   bookingController.cancelBooking
-);
-router.get(
-  "/:id",
-  authController.restrictTo("user"),
-  bookingController.getBooking
 );
 
 router.post(
@@ -42,8 +52,19 @@ router.post(
 router.post(
   "/:id/check-in",
   authController.restrictTo("user"),
+  uploadBookingFiles,
+  processBookingFiles,
   bookingController.checkInBooking
 );
+
+router.post(
+  "/:id/check-out",
+  authController.restrictTo("user"),
+  uploadBookingFiles,
+  processBookingFiles,
+  bookingController.checkOutBooking
+);
+
 router.patch(
   "/:id/driver-documents",
   authController.restrictTo("user"),
@@ -51,4 +72,5 @@ router.patch(
   processBookingFiles,
   bookingController.UpdateBookingDriver
 );
+
 module.exports = router;

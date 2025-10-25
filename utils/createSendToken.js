@@ -12,7 +12,8 @@ exports.createSendToken = (user, message, statusCode, res) => {
   const cookieOptions = {
     httpOnly: true,
     secure: false, // Temporarily disable for testing
-    sameSite: "lax",
+     sameSite: "none",
+    secure: true,
     expires: new Date(
       Date.now() +
         process.env.JWT_COOKIE_EXPIRES_IN * 24 * 60 * 60 * 1000 * 1000

@@ -1,6 +1,10 @@
 const mongoose = require("mongoose");
+const User = require("./models/userModel");
+const Preference = require("./models/preferenceModel");
 
 const app = require("./app");
+
+
 
 const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST || "0.0.0.0";
@@ -19,7 +23,11 @@ const startServer = async () => {
     const server = app.listen(PORT, HOST, () => {
       console.log(`🚀 Server running on http://${HOST}:${PORT}`);
     });
-
+     
+// setInterval(() => {
+//   const used = process.memoryUsage();
+//   console.log(`Memory: ${(used.heapUsed / 1024 / 1024).toFixed(2)} MB`);
+// }, 30000);
     // Graceful shutdown
     const shutdown = async (signal) => {
       console.log(`\n${signal} received. Closing...`);

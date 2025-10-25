@@ -7,6 +7,8 @@ const {
   processAvatar,
 } = require("../middleware/avatarUploadMiddleware");
 
+
+
 router.post("/signup", authController.signup);
 router.post("/verify-otp", authController.verifyOtp);
 router.post("/resend-otp", authController.resendOtp);
@@ -14,6 +16,7 @@ router.post("/login", authController.login);
 router.post("/logout", authController.logout);
 router.post("/forgot-password", authController.forgotPassword);
 router.patch("/reset-password/:token", authController.resetPassword);
+
 
 router.use(authController.protect);
 router.get("/me", authController.getMe);

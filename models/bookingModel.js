@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { USA_TIME_ZONES } = require("../utils/dateTimeUtils");
 
 const bookingSchema = new mongoose.Schema(
   {
@@ -17,7 +18,11 @@ const bookingSchema = new mongoose.Schema(
       ref: "Driver",
       default: null,
     },
-
+     timeZone: {
+    type: String,
+    default: 'America/Chicago', // Central Time for St. Louis
+    enum: Object.values(USA_TIME_ZONES)
+  },
     // Booking Dates & Times
     pickupDate: {
       type: Date,
@@ -35,14 +40,7 @@ const bookingSchema = new mongoose.Schema(
       type: String,
       default: "10:00 AM",
     },
-    actualPickupDate: {
-      type: Date,
-    },
-    actualReturnDate: {
-      type: Date,
-    },
-
-    // Pricing & Charges
+    
     totalPrice: {
       type: Number,
       required: true,
@@ -63,10 +61,6 @@ const bookingSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
-    lateReturnFee: {
-      type: Number,
-      default: 0,
-    },
     damageFee: {
       type: Number,
       default: 0,
@@ -81,6 +75,7 @@ const bookingSchema = new mongoose.Schema(
       type: String,
       enum: [
         "pending",
+        "in_progress",
         "confirmed",
         "active",
         "completed",
@@ -110,58 +105,32 @@ const bookingSchema = new mongoose.Schema(
     },
     paymentMethod: {
       type: String,
-      enum: ["card", "cash", "bank_transfer", "wallet"],
-      default: "card",
+      enum: ["stripe"],
+      default: "stripe",
     },
 
     // Location Information
     pickupLocation: {
       type: String,
       enum: [
-        "Kansas City",
+        
         "St. Louis",
-        "Springfield",
-        "Columbia",
-        "Independence",
-        "Lee's Summit",
-        "O'Fallon",
-        "St. Joseph",
-        "St. Charles",
-        "Blue Springs",
+      
       ],
       required: true,
     },
     returnLocation: {
       type: String,
       enum: [
-        "Kansas City",
+       
         "St. Louis",
-        "Springfield",
-        "Columbia",
-        "Independence",
-        "Lee's Summit",
-        "O'Fallon",
-        "St. Joseph",
-        "St. Charles",
-        "Blue Springs",
+        
       ],
       default: function () {
         return this.pickupLocation; // Default to pickup location
       },
     },
-
-    // Driver & Vehicle Details
-    driverLicenses: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "DriverLicense",
-      default: null,
-    },
-    insurance: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Insurance",
-      default: null,
-    },
-    additionalDrivers: [
+    Drivers: [
       {
         driver: {
           type: mongoose.Schema.Types.ObjectId,
@@ -173,7 +142,10 @@ const bookingSchema = new mongoose.Schema(
         },
       },
     ],
-
+    startMileage: {
+      type: Number,
+      min: 0,
+    },
     // Check-in Information
     checkInData: {
       checkInTime: {
@@ -192,44 +164,8 @@ const bookingSchema = new mongoose.Schema(
       },
       fuelLevel: {
         type: Number,
-        min: 0,
-        max: 100,
       },
-      exteriorPhotos: [
-        {
-          url: String,
-          caption: String,
-          uploadedAt: {
-            type: Date,
-            default: Date.now,
-          },
-        },
-      ],
-      interiorPhotos: [
-        {
-          url: String,
-          caption: String,
-          uploadedAt: {
-            type: Date,
-            default: Date.now,
-          },
-        },
-      ],
-      existingDamages: [
-        {
-          description: String,
-          location: String,
-          severity: {
-            type: String,
-            enum: ["minor", "moderate", "severe"],
-          },
-          photo: String,
-          notedAt: {
-            type: Date,
-            default: Date.now,
-          },
-        },
-      ],
+      checkInImages: [String],
       notes: {
         type: String,
         default: "",
@@ -264,49 +200,6 @@ const bookingSchema = new mongoose.Schema(
         min: 0,
         max: 100,
       },
-      exteriorPhotos: [
-        {
-          url: String,
-          caption: String,
-          uploadedAt: {
-            type: Date,
-            default: Date.now,
-          },
-        },
-      ],
-      interiorPhotos: [
-        {
-          url: String,
-          caption: String,
-          uploadedAt: {
-            type: Date,
-            default: Date.now,
-          },
-        },
-      ],
-      newDamages: [
-        {
-          description: String,
-          location: String,
-          severity: {
-            type: String,
-            enum: ["minor", "moderate", "severe"],
-          },
-          photo: String,
-          repairCost: {
-            type: Number,
-            default: 0,
-          },
-          notedAt: {
-            type: Date,
-            default: Date.now,
-          },
-        },
-      ],
-      notes: {
-        type: String,
-        default: "",
-      },
       cleaningRequired: {
         type: Boolean,
         default: false,
@@ -315,31 +208,46 @@ const bookingSchema = new mongoose.Schema(
         type: Number,
         default: 0,
       },
-      mileageCharge: {
+      allowedMileage: {
+      type: Number,
+      default: 200,
+    },
+      extraMileageCharge: {
         type: Number,
         default: 0,
       },
-    },
-
-    // Mileage Information
-    startMileage: {
-      type: Number,
-      min: 0,
-    },
-    endMileage: {
+     endMileage: {
       type: Number,
       min: 0,
       default: null,
     },
-    allowedMileage: {
-      type: Number,
-      default: 100, // miles per day
-    },
-    totalMileage: {
+    totalAdditionalCharges:{
       type: Number,
       default: 0,
     },
-
+    totalMileageUsed: {
+      type: Number,
+      default: 0,
+    },
+    mileageDifference: {
+      type: Number,
+      default: 0,
+    },
+     Photos: [
+        {
+          url: String,
+          caption: String,
+          uploadedAt: {
+            type: Date,
+            default: Date.now,
+          },
+        },
+      ],
+       notes: {
+        type: String,
+        default: "",
+      },
+    },
     // Rental Terms
     rentalTerms: {
       mileageLimit: {
@@ -364,10 +272,10 @@ const bookingSchema = new mongoose.Schema(
         default: 500,
       },
     },
-
     // Status Tracking
     statusHistory: [
       {
+        type: { type: String, enum: ["check-in", "check-out" ] },
         status: {
           type: String,
           required: true,
@@ -456,11 +364,7 @@ const bookingSchema = new mongoose.Schema(
 );
 
 // Indexes for better query performance
-bookingSchema.index({ user: 1, createdAt: -1 });
-bookingSchema.index({ car: 1, pickupDate: 1 });
-bookingSchema.index({ status: 1 });
-bookingSchema.index({ paymentStatus: 1 });
-bookingSchema.index({ pickupDate: 1, returnDate: 1 });
+
 
 // Pre-save middleware to update updatedAt
 bookingSchema.pre("save", function (next) {

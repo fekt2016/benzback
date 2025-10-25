@@ -18,7 +18,9 @@ const upload = multer({
 // --------- Booking-specific uploaders ---------
 exports.uploadBookingFiles = upload.fields([
   { name: "insurance", maxCount: 1 }, // 1 insurance doc
-  { name: "driverLicense", maxCount: 1 }, // multiple licenses
+  { name: "driverLicense", maxCount: 1 },
+  { name: "images", maxCount: 7 },
+  { name: "damagePhotos", maxCount: 10 }, // multiple licenses
 ]);
 
 exports.processBookingFiles = async (req, res, next) => {
@@ -62,6 +64,26 @@ exports.processBookingFiles = async (req, res, next) => {
         )
       );
       req.body.licenseImage = licenseUrls[0];
+    }
+    if (req.files && req.files.images) {
+      const checkInImagesUrl = await Promise.all(
+        req.files.images.map((file, i) =>
+          uploadFromBuffer(file.buffer, "checkIn", `checkIn-${Date.now()}-${i}`)
+        )
+      );
+      req.body.checkinImages = checkInImagesUrl;
+    }
+    if (req.files && req.files.damagePhotos) {
+      const damagePhotosUrl = await Promise.all(
+        req.files.damagePhotos.map((file, i) =>
+          uploadFromBuffer(
+            file.buffer,
+            "damagePhotos",
+            `damagePhotos-${Date.now()}-${i}`
+          )
+        )
+      );
+      req.body.damagePhotos = damagePhotosUrl;
     }
 
     next();

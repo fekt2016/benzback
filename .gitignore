@@ -39,3 +39,4 @@ Thumbs.db
 # Deployment
 deployment/
 
+sendgrid.env
