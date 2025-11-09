@@ -84,12 +84,12 @@ const chatSessionSchema = new mongoose.Schema(
 );
 
 // Index for efficient queries
-chatSessionSchema.index({ userId: 1, isActive: 1 });
-chatSessionSchema.index({ createdAt: -1 });
-chatSessionSchema.index({ status: 1, lastMessageAt: -1 });
-chatSessionSchema.index({ status: 1, isEscalated: 1 });
-chatSessionSchema.index({ assignedAdmin: 1, lastMessageAt: -1 }); // For admin's chat history
-chatSessionSchema.index({ assignedAdmin: 1, userId: 1 }); // For admin-user chat history
+// chatSessionSchema.index({ userId: 1, isActive: 1 });
+// chatSessionSchema.index({ createdAt: -1 });
+// chatSessionSchema.index({ status: 1, lastMessageAt: -1 });
+// chatSessionSchema.index({ status: 1, isEscalated: 1 });
+// chatSessionSchema.index({ assignedAdmin: 1, lastMessageAt: -1 }); // For admin's chat history
+// chatSessionSchema.index({ assignedAdmin: 1, userId: 1 }); // For admin-user chat history
 
 module.exports = mongoose.model("ChatSession", chatSessionSchema);
 

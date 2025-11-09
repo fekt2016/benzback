@@ -94,8 +94,8 @@ const driverSubSchema = new mongoose.Schema(
 );
 
 // Index for efficient queries by driver type
-driverSubSchema.index({ driverType: 1 });
-driverSubSchema.index({ user: 1, driverType: 1 });
+// driverSubSchema.index({ driverType: 1 });
+// driverSubSchema.index({ user: 1, driverType: 1 });
 
 /** Utilities **/
 function bothVerified(doc) {

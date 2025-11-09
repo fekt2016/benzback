@@ -52,12 +52,12 @@ const activityLogSchema = new mongoose.Schema(
 );
 
 // Indexes for efficient queries
-activityLogSchema.index({ createdAt: -1 });
-activityLogSchema.index({ userId: 1, createdAt: -1 });
-activityLogSchema.index({ driverId: 1, createdAt: -1 });
-activityLogSchema.index({ role: 1, createdAt: -1 });
-activityLogSchema.index({ action: 1, createdAt: -1 });
-activityLogSchema.index({ userId: 1, role: 1, createdAt: -1 });
+// activityLogSchema.index({ createdAt: -1 });
+// activityLogSchema.index({ userId: 1, createdAt: -1 });
+// activityLogSchema.index({ driverId: 1, createdAt: -1 });
+// activityLogSchema.index({ role: 1, createdAt: -1 });
+// activityLogSchema.index({ action: 1, createdAt: -1 });
+// activityLogSchema.index({ userId: 1, role: 1, createdAt: -1 });
 
 module.exports = mongoose.model("ActivityLog", activityLogSchema);
 
