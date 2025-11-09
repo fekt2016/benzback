@@ -41,7 +41,9 @@ jobs:
       - name: 📦 Install dependencies
         run: |
           echo "Installing production dependencies..."
-          npm ci --only=production --legacy-peer-deps
+          # Use npm install instead of npm ci to handle lock file sync issues
+          # This ensures package-lock.json matches package.json
+          npm install --omit=dev --legacy-peer-deps
           npm cache clean --force
           echo "✅ Dependencies installed"
 
