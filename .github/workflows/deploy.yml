@@ -184,7 +184,28 @@ jobs:
           [ ! -f "deployment/config.env" ] && echo "  ✅ config.env excluded (good)" || echo "  ⚠️  config.env included (should be excluded!)"
 
       # ========================================
-      # Step 7: Verify Remote FTP Directories
+      # Step 7: Check Remote Disk Space
+      # ========================================
+      # This step prevents "FTPError: 552 Disk full" by checking available disk space
+      # on the remote server before attempting deployment. It can also attempt
+      # automatic cleanup of temporary files if disk space is low.
+      - name: 💾 Check remote disk space
+        run: |
+          echo "Installing basic-ftp for disk space check..."
+          npm install basic-ftp --no-save
+          echo "✅ basic-ftp installed"
+          echo ""
+          echo "Running disk space check script..."
+          node .github/scripts/checkDiskSpace.js
+        env:
+          FTP_SERVER: ${{ secrets.CPANEL_FTP_SERVER || secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.CPANEL_FTP_USER || secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.CPANEL_FTP_PASS || secrets.FTP_PASSWORD }}
+          FTP_DIR: ${{ secrets.CPANEL_FTP_DIR || 'public_html/myapp/' }}
+          FTP_PORT: ${{ secrets.CPANEL_FTP_PORT || '21' }}
+
+      # ========================================
+      # Step 8: Verify Remote FTP Directories
       # ========================================
       # This step prevents "FTPError: 553 Can't open that file" by ensuring
       # all required directories exist on the remote server before deployment.
@@ -205,7 +226,7 @@ jobs:
           
 
       # ========================================
-      # Step 8: Deploy via FTP (with retry)
+      # Step 9: Deploy via FTP (with retry)
       # ========================================
       - name: 📤 Deploy to cPanel via FTP
         id: ftp-deploy
@@ -249,7 +270,7 @@ jobs:
           dry-run: false
 
       # ========================================
-      # Step 9: Retry on Failure (552 Disk Full)
+      # Step 10: Retry on Failure (552 Disk Full)
       # ========================================
       - name: 🔄 Retry deployment on failure
         if: failure() && steps.ftp-deploy.outcome == 'failure'
@@ -292,7 +313,7 @@ jobs:
           timeout: 60000
 
       # ========================================
-      # Step 10: Post-Deployment Instructions
+      # Step 11: Post-Deployment Instructions
       # ========================================
       - name: 📋 Deployment Summary
         if: success()
@@ -315,7 +336,7 @@ jobs:
           echo "⚠️  IMPORTANT: config.env was NOT deployed (use cPanel environment variables)"
 
       # ========================================
-      # Step 11: Handle Upload Errors
+      # Step 12: Handle Upload Errors
       # ========================================
       - name: 🧠 Handle upload errors
         if: failure()
