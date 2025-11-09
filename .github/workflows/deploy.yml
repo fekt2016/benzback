@@ -194,6 +194,7 @@ jobs:
       # on the remote server before attempting deployment. It can also attempt
       # automatic cleanup of temporary files if disk space is low.
       - name: 💾 Check remote disk space
+        id: check-disk-space
         run: |
           echo "Installing basic-ftp for disk space check..."
           npm install basic-ftp --no-save
@@ -216,6 +217,7 @@ jobs:
       # all required directories exist on the remote server before deployment.
       # The script checks and creates missing folders like /controllers, /models, etc.
       - name: 🧱 Verify remote directories exist
+        id: verify-dirs
         run: |
           echo "Installing basic-ftp for directory verification..."
           npm install basic-ftp --no-save
@@ -236,6 +238,7 @@ jobs:
       # ========================================
       - name: 📤 Deploy to cPanel via FTP
         id: ftp-deploy
+        continue-on-error: false
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.CPANEL_FTP_SERVER || secrets.FTP_SERVER }}
@@ -342,6 +345,57 @@ jobs:
           echo "⚠️  IMPORTANT: config.env was NOT deployed (use cPanel environment variables)"
 
       # ========================================
+      # Step 11.5: Capture Error Details
+      # ========================================
+      - name: 🔍 Capture error details
+        if: failure()
+        run: |
+          echo ""
+          echo "🔍 ========================================"
+          echo "🔍 ERROR ANALYSIS"
+          echo "🔍 ========================================"
+          echo ""
+          echo "Checking which step failed..."
+          echo ""
+          if [ "${{ steps.ftp-deploy.outcome }}" == "failure" ]; then
+            echo "❌ Step 9 (📤 Deploy via FTP) FAILED"
+            echo ""
+            echo "Common causes:"
+            echo "  • FTP connection refused (check FTP_SERVER and FTP_PORT)"
+            echo "  • Authentication failed (check FTP_USERNAME and FTP_PASSWORD)"
+            echo "  • Directory not found (check FTP_DIR path)"
+            echo "  • Disk full (should have been caught in Step 7)"
+            echo "  • Network timeout"
+            echo ""
+            echo "Check the Step 9 logs above for the specific error code."
+          elif [ "${{ steps.check-disk-space.outcome }}" == "failure" ]; then
+            echo "❌ Step 7 (💾 Check remote disk space) FAILED"
+            echo ""
+            echo "This usually means:"
+            echo "  • Cannot connect to FTP server"
+            echo "  • FTP credentials are incorrect"
+            echo "  • Disk is full and cleanup failed"
+            echo ""
+            echo "Check the Step 7 logs above for connection/disk errors."
+          elif [ "${{ steps.verify-dirs.outcome }}" == "failure" ]; then
+            echo "❌ Step 8 (🧱 Verify remote directories) FAILED"
+            echo ""
+            echo "This usually means:"
+            echo "  • Cannot create directories on FTP server"
+            echo "  • FTP user lacks write permissions"
+            echo "  • Directory path is incorrect"
+            echo ""
+            echo "Check the Step 8 logs above for permission/path errors."
+          else
+            echo "❌ An earlier step failed (Steps 1-6)"
+            echo ""
+            echo "Check the logs above to see which step failed."
+          fi
+          echo ""
+          echo "=========================================="
+          echo ""
+      
+      # ========================================
       # Step 12: Handle Upload Errors
       # ========================================
       - name: 🧠 Handle upload errors
@@ -354,6 +408,7 @@ jobs:
           echo ""
           echo "🔍 IMPORTANT: Scroll up to see the ACTUAL error message!"
           echo "   The error details are in the steps above this message."
+          echo "   Look for the '🔍 ERROR ANALYSIS' section above."
           echo ""
           echo "📋 Troubleshooting Steps:"
           echo ""
