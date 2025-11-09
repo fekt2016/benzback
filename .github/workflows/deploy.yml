@@ -4,14 +4,13 @@ on:
   push:
     branches: [main]
     paths:
-      - 'backend/**'
-      - '.github/workflows/deploy.yml'
+      - '**'
   workflow_dispatch:
 
 env:
   NODE_VERSION: "20"
-  FTP_DIR: "public_html/myapp"   # 👈 MANUAL FTP DIRECTORY PATH
-  FTP_PORT: "21"                 # 👈 Change if your host uses a custom FTP port
+  FTP_DIR: "public_html/myapp"   # 👈 MANUAL FTP DIRECTORY
+  FTP_PORT: "21"                 # 👈 Change if your FTP server uses another port
 
 jobs:
   deploy:
@@ -21,10 +20,6 @@ jobs:
       name: production
       url: https://benzflex.com
 
-    defaults:
-      run:
-        working-directory: backend
-
     steps:
       # =========================================
       # Step 1: Checkout Code
@@ -33,7 +28,16 @@ jobs:
         uses: actions/checkout@v4
 
       # =========================================
-      # Step 2: Detect Dependency Manager
+      # Step 2: Debug Repo Structure (for safety)
+      # =========================================
+      - name: 🧭 Debug directory structure
+        run: |
+          echo "Current directory: $(pwd)"
+          echo "Contents of repo root:"
+          ls -la | head -50
+
+      # =========================================
+      # Step 3: Detect Dependency Manager
       # =========================================
       - name: 🔍 Detect dependency manager
         run: |
@@ -46,22 +50,21 @@ jobs:
           fi
 
       # =========================================
-      # Step 3: Setup Node.js with Auto Cache
+      # Step 4: Setup Node.js with Auto Cache
       # =========================================
       - name: ⚙️ Setup Node.js (auto cache detection)
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: ${{ hashFiles('backend/package-lock.json') != '' && 'npm' || hashFiles('backend/yarn.lock') != '' && 'yarn' || '' }}
+          cache: ${{ hashFiles('package-lock.json') != '' && 'npm' || hashFiles('yarn.lock') != '' && 'yarn' || '' }}
           cache-dependency-path: |
-            backend/package-lock.json
-            backend/yarn.lock
+            package-lock.json
+            yarn.lock
 
       # =========================================
-      # Step 4: Verify FTP Secrets
+      # Step 5: Verify FTP Secrets
       # =========================================
       - name: 🔐 Verify FTP Secrets
-        id: verify-secrets
         run: |
           set -e
           if [ -z "${{ secrets.FTP_SERVER }}" ] || [ -z "${{ secrets.FTP_USERNAME }}" ] || [ -z "${{ secrets.FTP_PASSWORD }}" ]; then
@@ -73,145 +76,10 @@ jobs:
             echo "  - FTP_PASSWORD"
             exit 1
           fi
-
+          
           echo "✅ FTP secrets verified"
           echo "FTP_SERVER=${{ secrets.FTP_SERVER }}" >> $GITHUB_ENV
           echo "FTP_USERNAME=${{ secrets.FTP_USERNAME }}" >> $GITHUB_ENV
           echo "FTP_PASSWORD=${{ secrets.FTP_PASSWORD }}" >> $GITHUB_ENV
           echo "FTP_DIR=${{ env.FTP_DIR }}" >> $GITHUB_ENV
-          echo "FTP_PORT=${{ env.FTP_PORT }}" >> $GITHUB_ENV
-
-      # =========================================
-      # Step 5: Install Dependencies for Scripts
-      # =========================================
-      - name: 📦 Install basic-ftp library
-        run: npm install basic-ftp --no-save --legacy-peer-deps
-
-      # =========================================
-      # Step 6: Check Remote Disk Space
-      # =========================================
-      - name: 💾 Check remote disk space
-        id: check-disk-space
-        run: node .github/scripts/checkDiskSpace.js
-        env:
-          FTP_SERVER: ${{ secrets.FTP_SERVER }}
-          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
-          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-          FTP_DIR: ${{ env.FTP_DIR }}
-          FTP_PORT: ${{ env.FTP_PORT }}
-
-      # =========================================
-      # Step 7: Verify Remote Directories
-      # =========================================
-      - name: 🧱 Verify remote directories
-        id: verify-dirs
-        run: node .github/scripts/checkFtpDirs.js
-        env:
-          FTP_SERVER: ${{ secrets.FTP_SERVER }}
-          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
-          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-          FTP_DIR: ${{ env.FTP_DIR }}
-          FTP_PORT: ${{ env.FTP_PORT }}
-
-      # =========================================
-      # Step 8: Clean Old Files (Optional)
-      # =========================================
-      - name: 🧽 Clean old files (safe cleanup)
-        id: cleanup-old-files
-        continue-on-error: true
-        run: node .github/scripts/cleanupOldFiles.js
-        env:
-          FTP_SERVER: ${{ secrets.FTP_SERVER }}
-          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
-          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-          FTP_DIR: ${{ env.FTP_DIR }}
-          FTP_PORT: ${{ env.FTP_PORT }}
-
-      # =========================================
-      # Step 9: Prepare Deployment Package
-      # =========================================
-      - name: 🧹 Prepare deployment package
-        id: prepare-package
-        run: |
-          set -e
-          rm -rf deployment
-          mkdir -p deployment
-          
-          rsync -av \
-            --exclude='node_modules' \
-            --exclude='.git' \
-            --exclude='.github' \
-            --exclude='logs' \
-            --exclude='*.log' \
-            --exclude='*.env' \
-            ./ ./deployment/
-
-          cp start.sh deployment/start.sh
-          chmod +x deployment/start.sh
-
-          if [ ! -f "deployment/server.js" ] || [ ! -f "deployment/app.js" ] || [ ! -f "deployment/package.json" ]; then
-            echo "::error::Critical files missing!"
-            exit 1
-          fi
-          
-          echo "✅ Deployment package ready"
-
-      # =========================================
-      # Step 10: Deploy via FTP
-      # =========================================
-      - name: 📤 Deploy to cPanel via FTP
-        id: ftp-deploy
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          port: ${{ env.FTP_PORT }}
-          local-dir: ./backend/deployment/
-          server-dir: ${{ env.FTP_DIR }}
-          exclude: |
-            node_modules/**
-            .git/**
-            .github/**
-            logs/**
-            *.log
-            *.env
-          dangerous-clean-slate: false
-          log-level: verbose
-          timeout: 120000
-
-      # =========================================
-      # Step 11: Deployment Summary
-      # =========================================
-      - name: 📋 Deployment Summary
-        if: success()
-        run: |
-          echo "🎉 Deployment completed successfully!"
-          echo "🌐 Deployed to: ${{ env.FTP_DIR }}"
-          echo ""
-          echo "Next steps:"
-          echo "1️⃣ npm install --production --legacy-peer-deps"
-          echo "2️⃣ Set environment variables in cPanel"
-          echo "3️⃣ Set startup file to: start.sh"
-          echo "4️⃣ Restart Node.js app in cPanel"
-
-      # =========================================
-      # Step 12: Error Analysis
-      # =========================================
-      - name: 🔍 Error Analysis
-        if: failure()
-        run: |
-          echo "❌ Deployment failed"
-          echo ""
-          echo "Check which step failed:"
-          echo "  - Disk space check: ${{ steps.check-disk-space.outcome }}"
-          echo "  - Verify directories: ${{ steps.verify-dirs.outcome }}"
-          echo "  - Clean old files: ${{ steps.cleanup-old-files.outcome }}"
-          echo "  - Prepare package: ${{ steps.prepare-package.outcome }}"
-          echo "  - FTP deploy: ${{ steps.ftp-deploy.outcome }}"
-          echo ""
-          echo "Common issues:"
-          echo "  - 552 = Disk full (clean up server)"
-          echo "  - 553 = Directory not found"
-          echo "  - 530 = Authentication failed"
-          echo "  - Check GitHub Secrets are set correctly"
+          echo "FTP_PO_
