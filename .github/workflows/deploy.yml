@@ -35,9 +35,9 @@ jobs:
       # ========================================
       - name: 🔍 Verify FTP Secrets
         env:
-          FTP_SERVER: ${{ secrets.CPANEL_FTP_SERVER || secrets.FTP_SERVER }}
-          FTP_USERNAME: ${{ secrets.CPANEL_FTP_USER || secrets.FTP_USERNAME }}
-          FTP_PASSWORD: ${{ secrets.CPANEL_FTP_PASS || secrets.FTP_PASSWORD }}
+          FTP_SERVER: ${{  secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{  secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
         run: |
           echo "=== Verifying FTP Secrets ==="
           if [ -z "$FTP_SERVER" ] || [ -z "$FTP_USERNAME" ] || [ -z "$FTP_PASSWORD" ]; then
@@ -198,11 +198,11 @@ jobs:
           echo "Running FTP directory verification script..."
           node .github/scripts/checkFtpDirs.js
         env:
-          FTP_SERVER: ${{ secrets.CPANEL_FTP_SERVER || secrets.FTP_SERVER }}
-          FTP_USERNAME: ${{ secrets.CPANEL_FTP_USER || secrets.FTP_USERNAME }}
-          FTP_PASSWORD: ${{ secrets.CPANEL_FTP_PASS || secrets.FTP_PASSWORD }}
-          FTP_DIR: ${{ secrets.CPANEL_FTP_DIR || '/public_html/myapp/' }}
-          # FTP_PORT: ${{ secrets.CPANEL_FTP_PORT || '21' }}
+          FTP_SERVER: ${{  secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{  secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_DIR: /public_html/myapp/
+          
 
       # ========================================
       # Step 8: Deploy via FTP (with retry)
@@ -211,12 +211,12 @@ jobs:
         id: ftp-deploy
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.CPANEL_FTP_SERVER || secrets.FTP_SERVER }}
-          username: ${{ secrets.CPANEL_FTP_USER || secrets.FTP_USERNAME }}
-          password: ${{ secrets.CPANEL_FTP_PASS || secrets.FTP_PASSWORD }}
-          port: ${{ secrets.CPANEL_FTP_PORT || 21 }}
+          server: ${{  secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{  secrets.FTP_PASSWORD }}
+      
           local-dir: ./deployment/
-          server-dir: ${{ secrets.CPANEL_FTP_DIR || 'public_html/myapp/' }}
+          server-dir: /public_html/myapp/
           exclude: |
             node_modules/**
             test/**
