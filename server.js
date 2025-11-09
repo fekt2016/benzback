@@ -12,7 +12,8 @@ const v8 = require('v8');
 const heapLimit = v8.getHeapStatistics().heap_size_limit / 1024 / 1024;
 
 // Log Node.js options for debugging (especially important for cPanel)
-const MIN_REQUIRED_MEMORY = 2048; // Minimum 2GB required
+// Reduced to 1.5GB minimum to leave room for WebAssembly (undici) which allocates outside V8 heap
+const MIN_REQUIRED_MEMORY = 1536; // Minimum 1.5GB required (leaves 2.5GB for WebAssembly/system)
 
 if (process.env.NODE_OPTIONS) {
   console.log(`✅ NODE_OPTIONS: ${process.env.NODE_OPTIONS}`);
@@ -34,7 +35,7 @@ if (heapLimit < MIN_REQUIRED_MEMORY) {
   console.error(`❌ Your server will crash with "Out of memory" errors!`);
   console.error(`\n🔧 IMMEDIATE FIX REQUIRED:`);
   console.error(`1. In cPanel → Node.js App → Set "Startup File" to: start.sh`);
-  console.error(`2. Add environment variable: NODE_OPTIONS=--max-old-space-size=4096 --expose-gc`);
+  console.error(`2. Add environment variable: NODE_OPTIONS=--max-old-space-size=2048 --expose-gc`);
   console.error(`3. Restart your app`);
   console.error(`\n📖 See CPANEL_FIX_STEPS.md for step-by-step instructions.\n`);
   
@@ -112,8 +113,9 @@ const startServer = async () => {
         const heapTotalMB = (used.heapTotal / 1024 / 1024).toFixed(2);
         const rssMB = (used.rss / 1024 / 1024).toFixed(2);
         
-        // Log if memory usage is high (2.5GB threshold for 3GB limit, with CloudLinux LVE 4GB cap)
-        if (used.heapUsed > 2.5 * 1024 * 1024 * 1024) { // 2.5GB threshold (83% of 3GB, leaves room under 4GB LVE limit)
+        // Log if memory usage is high (1.5GB threshold for 2GB limit, with CloudLinux LVE 4GB cap)
+        // WebAssembly (undici) uses memory outside heap, so we need lower threshold
+        if (used.heapUsed > 1.5 * 1024 * 1024 * 1024) { // 1.5GB threshold (75% of 2GB, leaves room for WebAssembly)
           console.warn(`⚠️  High memory usage: Heap ${heapUsedMB}MB / ${heapTotalMB}MB, RSS: ${rssMB}MB`);
           console.warn(`⚠️  Memory is approaching 4GB limit. Consider optimizing or scaling.`);
           
