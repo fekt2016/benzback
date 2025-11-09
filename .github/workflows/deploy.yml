@@ -131,16 +131,23 @@ jobs:
           FTP_PORT: ${{ env.FTP_PORT }}
 
       # ========================================
-      # Step 8: Prepare Deployment Package
+      # Step 8: Prepare Deployment Package (Minimal Size)
       # ========================================
-      - name: 🧹 Prepare deployment package
+      - name: 🧹 Prepare deployment package (minimal size)
         working-directory: backend
         run: |
-          echo "Preparing clean deployment package..."
+          echo "Preparing minimal deployment package..."
+          echo "This step minimizes package size to reduce disk space requirements"
+          echo ""
           
           # Create deployment directory
           rm -rf deployment
           mkdir -p deployment
+          
+          # Calculate initial size
+          INITIAL_SIZE=$(du -sh . | cut -f1)
+          echo "📦 Initial directory size: $INITIAL_SIZE"
+          echo ""
           
           # Copy files with exclusions using rsync
           rsync -av \
@@ -196,7 +203,21 @@ jobs:
           
           # Calculate deployment size
           DEPLOY_SIZE=$(du -sh deployment | cut -f1)
-          echo "📦 Deployment package size: $DEPLOY_SIZE"
+          DEPLOY_SIZE_BYTES=$(du -sb deployment | cut -f1)
+          DEPLOY_SIZE_MB=$(echo "scale=2; $DEPLOY_SIZE_BYTES / 1024 / 1024" | bc)
+          
+          echo ""
+          echo "📦 Deployment package size: $DEPLOY_SIZE (~${DEPLOY_SIZE_MB}MB)"
+          echo ""
+          
+          # Warn if package is too large
+          if (( $(echo "$DEPLOY_SIZE_MB > 50" | bc -l) )); then
+            echo "⚠️  WARNING: Deployment package is large (${DEPLOY_SIZE_MB}MB)"
+            echo "   This may cause disk space issues on the server"
+            echo "   Consider cleaning up server disk space before deployment"
+          else
+            echo "✅ Deployment package size is reasonable (${DEPLOY_SIZE_MB}MB)"
+          fi
           
           # Verify critical files
           echo ""
@@ -381,11 +402,34 @@ jobs:
             if [ "$FTP_DEPLOY_OUTCOME" == "failure" ]; then
               echo "❌ FAILED: Step 9 (📤 Deploy via FTP)"
               echo ""
-              echo "Common causes:"
+              echo "🔴 CHECK FOR DISK FULL ERROR (552) IN LOGS ABOVE"
+              echo ""
+              echo "If you see '552 Disk full' or 'No space':"
+              echo ""
+              echo "IMMEDIATE ACTIONS REQUIRED:"
+              echo ""
+              echo "1. Clean up server disk space:"
+              echo "   • Log into cPanel → File Manager"
+              echo "   • Navigate to: ${{ env.FTP_DIR }}"
+              echo "   • Delete:"
+              echo "     - logs/ directory and all .log files"
+              echo "     - tmp/ and .tmp/ directories"
+              echo "     - node_modules/ (will be reinstalled with npm install)"
+              echo "     - Old .zip and .tar.gz archives"
+              echo "     - Any large backup files"
+              echo ""
+              echo "2. Check disk usage:"
+              echo "   • Go to: cPanel → Disk Usage"
+              echo "   • Identify largest directories/files"
+              echo "   • Delete unnecessary files"
+              echo ""
+              echo "3. After cleanup, retry deployment:"
+              echo "   • Go to: GitHub Actions → Re-run workflow"
+              echo ""
+              echo "Other common causes:"
               echo "  • FTP connection refused → Check FTP_SERVER and FTP_PORT"
               echo "  • Authentication failed → Check FTP_USERNAME and FTP_PASSWORD"
               echo "  • Directory not found → Check FTP_DIR path"
-              echo "  • Disk full → Should have been caught in Step 6"
               echo "  • Network timeout → Check server connectivity"
               echo ""
               echo "🔍 Action: Scroll up to Step 9 logs for detailed error"

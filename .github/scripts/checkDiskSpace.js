@@ -83,6 +83,13 @@ async function cleanupTempFiles(client, baseDir) {
     "tmp",
     ".tmp",
     "node_modules/.cache",
+    "node_modules",
+    ".npm",
+    ".cache",
+    "coverage",
+    ".nyc_output",
+    "dist",
+    "build",
   ];
   
   const cleanupPatterns = [
@@ -91,6 +98,16 @@ async function cleanupTempFiles(client, baseDir) {
     "*.zip",
     "*.tar.gz",
     "*.cache",
+    "*.swp",
+    "*.swo",
+    "*~",
+    ".DS_Store",
+    "npm-debug.log*",
+    "yarn-debug.log*",
+    "yarn-error.log*",
+    "production-*.tar.gz",
+    "production-*.zip",
+    "Archive.zip",
   ];
   
   let deletedCount = 0;
@@ -126,7 +143,20 @@ async function cleanupTempFiles(client, baseDir) {
       }
     }
     
-    // Try to remove files matching patterns in base directory
+    // Try to remove node_modules if it exists (can be reinstalled)
+    const nodeModulesPath = path.posix.join(baseDir, "node_modules").replace(/\\/g, "/");
+    try {
+      const nodeModulesFiles = await client.list(nodeModulesPath);
+      if (nodeModulesFiles && nodeModulesFiles.length > 0) {
+        log(`  📦 Found node_modules/ directory (${nodeModulesFiles.length} items)`, "yellow");
+        log(`  ⚠️  WARNING: node_modules can be large. Consider removing it manually if needed.`, "yellow");
+        log(`  💡 Tip: node_modules will be reinstalled after deployment with 'npm install --production'`, "yellow");
+      }
+    } catch (error) {
+      // node_modules doesn't exist, skip
+    }
+    
+    // Try to remove old deployment archives
     try {
       const baseFiles = await client.list(baseDir);
       for (const file of baseFiles) {
