@@ -32,7 +32,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: 20.x
 
       - name: Verify FTP Secrets
         id: verify-secrets
@@ -40,8 +40,8 @@ jobs:
           FTP_SERVER="${{ secrets.CPANEL_FTP_SERVER || secrets.FTP_SERVER }}"
           FTP_USERNAME="${{ secrets.CPANEL_FTP_USER || secrets.FTP_USERNAME }}"
           FTP_PASSWORD="${{ secrets.CPANEL_FTP_PASS || secrets.FTP_PASSWORD }}"
-          FTP_DIR="${{ secrets.CPANEL_FTP_DIR || env.FTP_DIR_DEFAULT }}"
-          FTP_PORT="${{ secrets.CPANEL_FTP_PORT || env.FTP_PORT_DEFAULT }}"
+          FTP_DIR="${{ secrets.CPANEL_FTP_DIR || '/public_html/myapp/' }}"
+          FTP_PORT="${{ secrets.CPANEL_FTP_PORT || 21 }}"
           
           if [ -z "$FTP_SERVER" ] || [ -z "$FTP_USERNAME" ] || [ -z "$FTP_PASSWORD" ]; then
             echo "::error::Missing required FTP secrets!"
@@ -61,11 +61,11 @@ jobs:
         id: check-disk-space
         run: node .github/scripts/checkDiskSpace.js
         env:
-          FTP_SERVER: ${{ env.FTP_SERVER }}
-          FTP_USERNAME: ${{ env.FTP_USERNAME }}
-          FTP_PASSWORD: ${{ env.FTP_PASSWORD }}
-          FTP_DIR: ${{ env.FTP_DIR }}
-          FTP_PORT: ${{ env.FTP_PORT }}
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_DIR: '/public_html/myapp/'
+          FTP_PORT: 21
 
       - name: Verify directories
         id: verify-dirs
@@ -74,19 +74,19 @@ jobs:
           FTP_SERVER: ${{ env.FTP_SERVER }}
           FTP_USERNAME: ${{ env.FTP_USERNAME }}
           FTP_PASSWORD: ${{ env.FTP_PASSWORD }}
-          FTP_DIR: ${{ env.FTP_DIR }}
-          FTP_PORT: ${{ env.FTP_PORT }}
+          FTP_DIR: /public_html/myapp/
+          FTP_PORT: 21
 
       - name: Clean old files
         id: cleanup-old-files
         continue-on-error: true
         run: node .github/scripts/cleanupOldFiles.js
         env:
-          FTP_SERVER: ${{ env.FTP_SERVER }}
-          FTP_USERNAME: ${{ env.FTP_USERNAME }}
-          FTP_PASSWORD: ${{ env.FTP_PASSWORD }}
-          FTP_DIR: ${{ env.FTP_DIR }}
-          FTP_PORT: ${{ env.FTP_PORT }}
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_DIR: '/public_html/myapp/'
+          FTP_PORT: 21
 
       - name: Prepare deployment package
         id: prepare-package
@@ -138,12 +138,12 @@ jobs:
         id: ftp-deploy
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ env.FTP_SERVER }}
-          username: ${{ env.FTP_USERNAME }}
-          password: ${{ env.FTP_PASSWORD }}
-          port: ${{ env.FTP_PORT }}
-          local-dir: backend/deployment/
-          server-dir: ${{ env.FTP_DIR }}
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          port: ${{ secrets.FTP_PORT }}
+          local-dir: /deployment/
+          server-dir: ${{ secrets.FTP_DIR }}
           exclude: |
             node_modules/**
             .git/**
