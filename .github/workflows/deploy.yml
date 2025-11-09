@@ -47,7 +47,7 @@ jobs:
             echo "  - CPANEL_FTP_USER (or FTP_USERNAME)"
             echo "  - CPANEL_FTP_PASS (or FTP_PASSWORD)"
             echo "Optional:"
-            echo "  - CPANEL_FTP_PORT (default: 21)"
+         
             echo "  - CPANEL_FTP_DIR (default: public_html/myapp)"
             exit 1
           fi
@@ -201,8 +201,8 @@ jobs:
           FTP_SERVER: ${{ secrets.CPANEL_FTP_SERVER || secrets.FTP_SERVER }}
           FTP_USERNAME: ${{ secrets.CPANEL_FTP_USER || secrets.FTP_USERNAME }}
           FTP_PASSWORD: ${{ secrets.CPANEL_FTP_PASS || secrets.FTP_PASSWORD }}
-          FTP_DIR: ${{ secrets.CPANEL_FTP_DIR || 'public_html/myapp/' }}
-          FTP_PORT: ${{ secrets.CPANEL_FTP_PORT || '21' }}
+          FTP_DIR: /public_html/myapp/
+ 
 
       # ========================================
       # Step 8: Verify Remote FTP Directories
@@ -321,7 +321,7 @@ jobs:
           echo ""
           echo "🎉 DEPLOYMENT COMPLETED SUCCESSFULLY!"
           echo "======================================"
-          echo "🌐 Application deployed to: ${{ secrets.CPANEL_FTP_DIR || 'public_html/myapp/' }}"
+          echo "🌐 Application deployed to: /public_html/myapp/
           echo "🔗 Live URL: https://benzflex.com"
           echo ""
           echo "📋 POST-DEPLOYMENT CHECKLIST:"
