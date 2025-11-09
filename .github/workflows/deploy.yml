@@ -139,7 +139,7 @@ jobs:
                     --exclude='node_modules' \
                     --exclude='.git' \
                     --exclude='test' \
-                    --exclude='.github' \
+                    --exclude='.github/workflows' \
                     --exclude='deployment' \
                     --exclude='config.env' \
                     --exclude='*.env' \
@@ -166,6 +166,10 @@ jobs:
           cp start.sh deployment/start.sh
           chmod +x deployment/start.sh
           
+          # CRITICAL: Ensure .github/scripts directory exists for verification script
+          # (Note: The script runs BEFORE deployment, so it needs to be available in the runner)
+          # We don't deploy .github/scripts, but we need it during the workflow
+          
           # Calculate deployment size
           DEPLOY_SIZE=$(du -sh deployment | cut -f1)
           echo "📦 Deployment package size: $DEPLOY_SIZE"
@@ -180,7 +184,28 @@ jobs:
           [ ! -f "deployment/config.env" ] && echo "  ✅ config.env excluded (good)" || echo "  ⚠️  config.env included (should be excluded!)"
 
       # ========================================
-      # Step 7: Deploy via FTP (with retry)
+      # Step 7: Verify Remote FTP Directories
+      # ========================================
+      # This step prevents "FTPError: 553 Can't open that file" by ensuring
+      # all required directories exist on the remote server before deployment.
+      # The script checks and creates missing folders like /controllers, /models, etc.
+      - name: 🧱 Verify remote directories exist
+        run: |
+          echo "Installing basic-ftp for directory verification..."
+          npm install basic-ftp --no-save
+          echo "✅ basic-ftp installed"
+          echo ""
+          echo "Running FTP directory verification script..."
+          node .github/scripts/checkFtpDirs.js
+        env:
+          FTP_SERVER: ${{ secrets.CPANEL_FTP_SERVER || secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.CPANEL_FTP_USER || secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.CPANEL_FTP_PASS || secrets.FTP_PASSWORD }}
+          FTP_DIR: ${{ secrets.CPANEL_FTP_DIR || 'public_html/myapp/' }}
+          FTP_PORT: ${{ secrets.CPANEL_FTP_PORT || '21' }}
+
+      # ========================================
+      # Step 8: Deploy via FTP (with retry)
       # ========================================
       - name: 📤 Deploy to cPanel via FTP
         id: ftp-deploy
@@ -224,7 +249,7 @@ jobs:
           dry-run: false
 
       # ========================================
-      # Step 8: Retry on Failure (552 Disk Full)
+      # Step 9: Retry on Failure (552 Disk Full)
       # ========================================
       - name: 🔄 Retry deployment on failure
         if: failure() && steps.ftp-deploy.outcome == 'failure'
@@ -267,7 +292,7 @@ jobs:
           timeout: 60000
 
       # ========================================
-      # Step 9: Post-Deployment Instructions
+      # Step 10: Post-Deployment Instructions
       # ========================================
       - name: 📋 Deployment Summary
         if: success()
@@ -290,7 +315,7 @@ jobs:
           echo "⚠️  IMPORTANT: config.env was NOT deployed (use cPanel environment variables)"
 
       # ========================================
-      # Step 10: Handle Upload Errors
+      # Step 11: Handle Upload Errors
       # ========================================
       - name: 🧠 Handle upload errors
         if: failure()
