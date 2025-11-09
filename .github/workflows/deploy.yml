@@ -10,6 +10,8 @@ on:
 
 env:
   NODE_VERSION: "20"
+  FTP_DIR: "public_html/myapp"   # 👈 MANUAL FTP DIRECTORY PATH
+  FTP_PORT: "21"                 # 👈 Change if your host uses a custom FTP port
 
 jobs:
   deploy:
@@ -35,9 +37,9 @@ jobs:
       # =========================================
       - name: 🔍 Detect dependency manager
         run: |
-          if [ -f "backend/package-lock.json" ]; then
+          if [ -f "package-lock.json" ]; then
             echo "📦 Detected npm (package-lock.json found)"
-          elif [ -f "backend/yarn.lock" ]; then
+          elif [ -f "yarn.lock" ]; then
             echo "📦 Detected Yarn (yarn.lock found)"
           else
             echo "⚠️  No lock file found — caching disabled"
@@ -62,14 +64,13 @@ jobs:
         id: verify-secrets
         run: |
           set -e
-          if [ -z "${{ secrets.FTP_SERVER }}" ] || [ -z "${{ secrets.FTP_USERNAME }}" ] || [ -z "${{ secrets.FTP_PASSWORD }}" ] || [ -z "${{ secrets.FTP_DIR }}" ]; then
+          if [ -z "${{ secrets.FTP_SERVER }}" ] || [ -z "${{ secrets.FTP_USERNAME }}" ] || [ -z "${{ secrets.FTP_PASSWORD }}" ]; then
             echo "::error::Missing required FTP secrets!"
             echo ""
             echo "Required GitHub Secrets:"
             echo "  - FTP_SERVER"
             echo "  - FTP_USERNAME"
             echo "  - FTP_PASSWORD"
-            echo "  - FTP_DIR (example: public_html/myapp)"
             exit 1
           fi
 
@@ -77,8 +78,8 @@ jobs:
           echo "FTP_SERVER=${{ secrets.FTP_SERVER }}" >> $GITHUB_ENV
           echo "FTP_USERNAME=${{ secrets.FTP_USERNAME }}" >> $GITHUB_ENV
           echo "FTP_PASSWORD=${{ secrets.FTP_PASSWORD }}" >> $GITHUB_ENV
-          echo "FTP_DIR=${{ secrets.FTP_DIR }}" >> $GITHUB_ENV
-          echo "FTP_PORT=${{ secrets.FTP_PORT || '21' }}" >> $GITHUB_ENV
+          echo "FTP_DIR=${{ env.FTP_DIR }}" >> $GITHUB_ENV
+          echo "FTP_PORT=${{ env.FTP_PORT }}" >> $GITHUB_ENV
 
       # =========================================
       # Step 5: Install Dependencies for Scripts
@@ -96,8 +97,8 @@ jobs:
           FTP_SERVER: ${{ secrets.FTP_SERVER }}
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-          FTP_DIR: ${{ secrets.FTP_DIR }}
-          FTP_PORT: ${{ secrets.FTP_PORT || '21' }}
+          FTP_DIR: ${{ env.FTP_DIR }}
+          FTP_PORT: ${{ env.FTP_PORT }}
 
       # =========================================
       # Step 7: Verify Remote Directories
@@ -109,11 +110,11 @@ jobs:
           FTP_SERVER: ${{ secrets.FTP_SERVER }}
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-          FTP_DIR: ${{ secrets.FTP_DIR }}
-          FTP_PORT: ${{ secrets.FTP_PORT || '21' }}
+          FTP_DIR: ${{ env.FTP_DIR }}
+          FTP_PORT: ${{ env.FTP_PORT }}
 
       # =========================================
-      # Step 8: Clean Old Files (Optional Pre-Cleanup)
+      # Step 8: Clean Old Files (Optional)
       # =========================================
       - name: 🧽 Clean old files (safe cleanup)
         id: cleanup-old-files
@@ -123,8 +124,8 @@ jobs:
           FTP_SERVER: ${{ secrets.FTP_SERVER }}
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-          FTP_DIR: ${{ secrets.FTP_DIR }}
-          FTP_PORT: ${{ secrets.FTP_PORT || '21' }}
+          FTP_DIR: ${{ env.FTP_DIR }}
+          FTP_PORT: ${{ env.FTP_PORT }}
 
       # =========================================
       # Step 9: Prepare Deployment Package
@@ -135,7 +136,7 @@ jobs:
           set -e
           rm -rf deployment
           mkdir -p deployment
-
+          
           rsync -av \
             --exclude='node_modules' \
             --exclude='.git' \
@@ -165,9 +166,9 @@ jobs:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          port: ${{ secrets.FTP_PORT || '21' }}
+          port: ${{ env.FTP_PORT }}
           local-dir: ./backend/deployment/
-          server-dir: ${{ secrets.FTP_DIR }}
+          server-dir: ${{ env.FTP_DIR }}
           exclude: |
             node_modules/**
             .git/**
@@ -186,7 +187,7 @@ jobs:
         if: success()
         run: |
           echo "🎉 Deployment completed successfully!"
-          echo "🌐 Deployed to: ${{ secrets.FTP_DIR }}"
+          echo "🌐 Deployed to: ${{ env.FTP_DIR }}"
           echo ""
           echo "Next steps:"
           echo "1️⃣ npm install --production --legacy-peer-deps"
