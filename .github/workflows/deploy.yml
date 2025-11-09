@@ -133,7 +133,23 @@ jobs:
           FTP_PORT: ${{ env.FTP_PORT }}
 
       # ========================================
-      # Step 8: Prepare Deployment Package (Minimal Size)
+      # Step 8: Clean Old Files on FTP Server
+      # ========================================
+      - name: 🧽 Clean old files on FTP (pre-deployment)
+        working-directory: backend
+        continue-on-error: true
+        run: |
+          echo "🧹 Cleaning old files from remote FTP server before upload..."
+          node .github/scripts/cleanupOldFiles.js
+        env:
+          FTP_SERVER: ${{ env.FTP_SERVER }}
+          FTP_USERNAME: ${{ env.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ env.FTP_PASSWORD }}
+          FTP_DIR: ${{ env.FTP_DIR }}
+          FTP_PORT: ${{ env.FTP_PORT }}
+
+      # ========================================
+      # Step 9: Prepare Deployment Package (Minimal Size)
       # ========================================
       - name: 🧹 Prepare deployment package (minimal size)
         working-directory: backend
@@ -319,7 +335,7 @@ jobs:
           dry-run: false
 
       # ========================================
-      # Step 10: Post-Deployment Summary
+      # Step 11: Post-Deployment Summary
       # ========================================
       - name: 📋 Deployment Summary
         if: success()
@@ -375,7 +391,7 @@ jobs:
           echo "   • start.sh must be executable (755 permissions)"
 
       # ========================================
-      # Step 11: Error Analysis
+      # Step 12: Error Analysis
       # ========================================
       - name: 🔍 Error Analysis
         if: always()
@@ -393,7 +409,8 @@ jobs:
           echo "📊 Step Status:"
           echo "  Step 6 (💾 Check disk space): ${DISK_SPACE_OUTCOME:-unknown}"
           echo "  Step 7 (🧱 Verify directories): ${VERIFY_DIRS_OUTCOME:-unknown}"
-          echo "  Step 9 (📤 Deploy via FTP): ${FTP_DEPLOY_OUTCOME:-unknown}"
+          echo "  Step 8 (🧽 Clean old files): ${CLEANUP_OUTCOME:-unknown}"
+          echo "  Step 10 (📤 Deploy via FTP): ${FTP_DEPLOY_OUTCOME:-unknown}"
           echo ""
           
           if [ "${{ job.status }}" != "success" ]; then
@@ -465,7 +482,7 @@ jobs:
           echo "=========================================="
 
       # ========================================
-      # Step 12: Final Error Handler
+      # Step 13: Final Error Handler
       # ========================================
       - name: 🧠 Final Error Handler
         if: failure()
