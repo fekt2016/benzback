@@ -37,11 +37,11 @@ jobs:
       - name: Verify FTP Secrets
         id: verify-secrets
         run: |
-          FTP_SERVER="${{ secrets.CPANEL_FTP_SERVER || secrets.FTP_SERVER }}"
-          FTP_USERNAME="${{ secrets.CPANEL_FTP_USER || secrets.FTP_USERNAME }}"
-          FTP_PASSWORD="${{ secrets.CPANEL_FTP_PASS || secrets.FTP_PASSWORD }}"
-          FTP_DIR="${{ secrets.CPANEL_FTP_DIR || '/public_html/myapp/' }}"
-          FTP_PORT="${{ secrets.CPANEL_FTP_PORT || 21 }}"
+          FTP_SERVER="${{ secrets.FTP_SERVER }}"
+          FTP_USERNAME="${{ secrets.FTP_USERNAME }}"
+          FTP_PASSWORD="${{ secrets.FTP_PASSWORD }}"
+          FTP_DIR= '/public_html/myapp/'
+          FTP_PORT= 21
           
           if [ -z "$FTP_SERVER" ] || [ -z "$FTP_USERNAME" ] || [ -z "$FTP_PASSWORD" ]; then
             echo "::error::Missing required FTP secrets!"
