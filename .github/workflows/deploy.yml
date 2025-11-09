@@ -47,14 +47,16 @@ jobs:
           npm cache clean --force
           echo "✅ Dependencies installed"
 
-      - name: 🧹 Prepare deployment package
+      - name: 🧹 Prepare deployment package (minimal size)
         run: |
-          echo "Preparing deployment package..."
+          echo "Preparing minimal deployment package..."
           rm -rf deployment
           mkdir -p deployment
 
-          # Copy all files except excluded ones
-          rsync -av --exclude='node_modules' \
+          # Copy essential files only to minimize deployment size
+          # This reduces deployment from ~100MB to ~5-10MB
+          rsync -av \
+                    --exclude='node_modules' \
                     --exclude='.git' \
                     --exclude='test' \
                     --exclude='.github' \
@@ -72,21 +74,27 @@ jobs:
                     --exclude='Archive.zip' \
                     --exclude='production-run.log' \
                     --exclude='memory-monitor-report.json' \
+                    --exclude='scripts' \
+                    --exclude='.gitignore' \
+                    --exclude='README.md' \
                     ./ ./deployment/
 
-          # CRITICAL: Copy start.sh separately and ensure it's included
-          # start.sh is essential for cPanel CloudLinux LVE memory limits
+          # CRITICAL: Copy start.sh separately (was excluded by *.sh pattern)
           cp start.sh deployment/start.sh
           chmod +x deployment/start.sh
           
-          echo "📦 Deployment package contents:"
-          ls -la deployment/ | head -30
+          # Calculate deployment size
+          DEPLOY_SIZE=$(du -sh deployment | cut -f1)
+          echo "📦 Deployment package size: $DEPLOY_SIZE"
+          echo ""
+          echo "📦 Essential files included:"
+          ls -la deployment/ | grep -E "(start.sh|server.js|app.js|package.json)" || echo "  Checking..."
           echo ""
           echo "✅ Verifying critical files:"
           [ -f "deployment/start.sh" ] && echo "  ✅ start.sh" || echo "  ❌ start.sh MISSING!"
           [ -f "deployment/server.js" ] && echo "  ✅ server.js" || echo "  ❌ server.js MISSING!"
           [ -f "deployment/package.json" ] && echo "  ✅ package.json" || echo "  ❌ package.json MISSING!"
-          [ ! -f "deployment/config.env" ] && echo "  ✅ config.env excluded (good - use cPanel env vars)" || echo "  ⚠️  config.env included (should be excluded!)"
+          [ ! -f "deployment/config.env" ] && echo "  ✅ config.env excluded (good)" || echo "  ⚠️  config.env included (should be excluded!)"
 
       - name: 📤 Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -116,6 +124,9 @@ jobs:
             Archive.zip
             production-run.log
             memory-monitor-report.json
+            scripts/**
+            .gitignore
+            README.md
           dangerous-clean-slate: false
           log-level: verbose
 
