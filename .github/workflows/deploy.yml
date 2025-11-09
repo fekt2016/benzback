@@ -1,8 +1,10 @@
-name: 🚀 FTP Deployment for Express Backend
+name: 🚀 FTP Deploy to cPanel
 
+# Workflow triggers
 on:
   push:
     branches: [main]
+  workflow_dispatch: # Allows manual triggering from GitHub Actions tab
 
 jobs:
   deploy:
@@ -13,40 +15,118 @@ jobs:
       url: https://benzflex.com
 
     steps:
+      # ========================================
+      # Step 1: Checkout Code
+      # ========================================
       - name: 🚚 Checkout code
         uses: actions/checkout@v4
 
+      # ========================================
+      # Step 2: Setup Node.js
+      # ========================================
       - name: ⚙️ Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "18"
           cache: "npm"
 
-      - name: 🔍 Debug FTP Secrets
+      # ========================================
+      # Step 3: Verify FTP Secrets
+      # ========================================
+      - name: 🔍 Verify FTP Secrets
         env:
-          FTP_SERVER: ${{ secrets.FTP_SERVER }}
-          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
-          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_SERVER: ${{ secrets.CPANEL_FTP_SERVER || secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.CPANEL_FTP_USER || secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.CPANEL_FTP_PASS || secrets.FTP_PASSWORD }}
         run: |
-          echo "=== Debugging FTP Secrets ==="
-          echo "FTP_SERVER length: ${#FTP_SERVER}"
-          echo "FTP_USERNAME length: ${#FTP_USERNAME}"
-          echo "FTP_PASSWORD length: ${#FTP_PASSWORD}"
+          echo "=== Verifying FTP Secrets ==="
           if [ -z "$FTP_SERVER" ] || [ -z "$FTP_USERNAME" ] || [ -z "$FTP_PASSWORD" ]; then
             echo "::error::One or more FTP secrets are missing!"
+            echo "Required secrets:"
+            echo "  - CPANEL_FTP_SERVER (or FTP_SERVER)"
+            echo "  - CPANEL_FTP_USER (or FTP_USERNAME)"
+            echo "  - CPANEL_FTP_PASS (or FTP_PASSWORD)"
+            echo "Optional:"
+            echo "  - CPANEL_FTP_PORT (default: 21)"
+            echo "  - CPANEL_FTP_DIR (default: public_html/myapp)"
             exit 1
           fi
           echo "✅ FTP secrets verified"
+          echo "FTP_SERVER length: ${#FTP_SERVER}"
+          echo "FTP_USERNAME length: ${#FTP_USERNAME}"
+          echo "FTP_PASSWORD length: ${#FTP_PASSWORD}"
 
+      # ========================================
+      # Step 4: Install Dependencies
+      # ========================================
       - name: 📦 Install dependencies
         run: |
           echo "Installing production dependencies..."
           # Use npm install instead of npm ci to handle lock file sync issues
-          # This ensures package-lock.json matches package.json
           npm install --omit=dev --legacy-peer-deps
           npm cache clean --force
           echo "✅ Dependencies installed"
 
+      # ========================================
+      # Step 5: Clean Build Artifacts & Old Files
+      # ========================================
+      - name: 🧹 Clean unnecessary files before deployment
+        run: |
+          echo "🧹 Cleaning build artifacts and old files..."
+          
+          # Remove large directories that shouldn't be deployed
+          echo "Removing node_modules..."
+          rm -rf node_modules
+          
+          # Remove version control
+          echo "Removing .git and .github..."
+          rm -rf .git .github
+          
+          # Remove logs and temp files
+          echo "Removing logs and temp files..."
+          rm -rf logs tmp .tmp
+          find . -type f -name "*.log" -delete
+          find . -type f -name "*.tmp" -delete
+          
+          # Remove test files
+          echo "Removing test files..."
+          find . -type f -name "test-*.js" -delete
+          find . -type f -name "*.test.js" -delete
+          find . -type f -name "*.spec.js" -delete
+          
+          # Remove monitoring/debug scripts
+          echo "Removing debug scripts..."
+          find . -type f -name "monitor-*.js" -delete
+          find . -type f -name "quick-*.js" -delete
+          find . -type f -name "run-*.js" -delete
+          
+          # Remove documentation
+          echo "Removing documentation files..."
+          find . -type f -name "*.md" -delete
+          
+          # Remove archives
+          echo "Removing archive files..."
+          find . -type f -name "*.zip" -delete
+          find . -type f -name "*.tar.gz" -delete
+          
+          # Remove environment files (use cPanel env vars instead)
+          echo "Removing environment files..."
+          find . -type f -name "config.env" -delete
+          find . -type f -name ".env*" -delete
+          find . -type f -name "*.env" -delete
+          
+          # Remove scripts folder (not needed in production)
+          echo "Removing scripts folder..."
+          rm -rf scripts
+          
+          # Calculate size after cleaning
+          CLEAN_SIZE=$(du -sh . | cut -f1)
+          echo "📦 Size after cleaning: $CLEAN_SIZE"
+          echo "✅ Cleaning complete"
+
+      # ========================================
+      # Step 6: Prepare Deployment Package
+      # ========================================
       - name: 🧹 Prepare deployment package (minimal size)
         run: |
           echo "Preparing minimal deployment package..."
@@ -78,6 +158,8 @@ jobs:
                     --exclude='scripts' \
                     --exclude='.gitignore' \
                     --exclude='README.md' \
+                    --exclude='tmp' \
+                    --exclude='logs' \
                     ./ ./deployment/
 
           # CRITICAL: Copy start.sh separately (was excluded by *.sh pattern)
@@ -97,14 +179,19 @@ jobs:
           [ -f "deployment/package.json" ] && echo "  ✅ package.json" || echo "  ❌ package.json MISSING!"
           [ ! -f "deployment/config.env" ] && echo "  ✅ config.env excluded (good)" || echo "  ⚠️  config.env included (should be excluded!)"
 
-      - name: 📤 Deploy via FTP
+      # ========================================
+      # Step 7: Deploy via FTP (with retry)
+      # ========================================
+      - name: 📤 Deploy to cPanel via FTP
+        id: ftp-deploy
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
+          server: ${{ secrets.CPANEL_FTP_SERVER || secrets.FTP_SERVER }}
+          username: ${{ secrets.CPANEL_FTP_USER || secrets.FTP_USERNAME }}
+          password: ${{ secrets.CPANEL_FTP_PASS || secrets.FTP_PASSWORD }}
+          port: ${{ secrets.CPANEL_FTP_PORT || 21 }}
           local-dir: ./deployment/
-          server-dir: public_html/myapp/
+          server-dir: ${{ secrets.CPANEL_FTP_DIR || 'public_html/myapp/' }}
           exclude: |
             node_modules/**
             test/**
@@ -129,21 +216,66 @@ jobs:
             scripts/**
             .gitignore
             README.md
+            tmp/**
+            logs/**
           dangerous-clean-slate: false
           log-level: verbose
+          timeout: 60000
+          dry-run: false
 
-      - name: 🔧 Set start.sh permissions (via FTP)
-        run: |
-          echo "⚠️  Note: start.sh permissions must be set to 755 in cPanel File Manager"
-          echo "⚠️  After deployment, go to cPanel → File Manager → backend folder"
-          echo "⚠️  Right-click start.sh → Change Permissions → Set to 755"
+      # ========================================
+      # Step 8: Retry on Failure (552 Disk Full)
+      # ========================================
+      - name: 🔄 Retry deployment on failure
+        if: failure() && steps.ftp-deploy.outcome == 'failure'
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.CPANEL_FTP_SERVER || secrets.FTP_SERVER }}
+          username: ${{ secrets.CPANEL_FTP_USER || secrets.FTP_USERNAME }}
+          password: ${{ secrets.CPANEL_FTP_PASS || secrets.FTP_PASSWORD }}
+          port: ${{ secrets.CPANEL_FTP_PORT || 21 }}
+          local-dir: ./deployment/
+          server-dir: ${{ secrets.CPANEL_FTP_DIR || 'public_html/myapp/' }}
+          exclude: |
+            node_modules/**
+            test/**
+            .git*
+            .github/**
+            deployment/**
+            config.env
+            *.env
+            .env*
+            *.log
+            *.md
+            **/*.md
+            test-*.js
+            quick-*.js
+            monitor-*.js
+            run-*.js
+            *.sh
+            !start.sh
+            Archive.zip
+            production-run.log
+            memory-monitor-report.json
+            scripts/**
+            .gitignore
+            README.md
+            tmp/**
+            logs/**
+          dangerous-clean-slate: false
+          log-level: verbose
+          timeout: 60000
 
+      # ========================================
+      # Step 9: Post-Deployment Instructions
+      # ========================================
       - name: 📋 Deployment Summary
+        if: success()
         run: |
           echo ""
           echo "🎉 DEPLOYMENT COMPLETED SUCCESSFULLY!"
           echo "======================================"
-          echo "🌐 Application deployed to: public_html/myapp/"
+          echo "🌐 Application deployed to: ${{ secrets.CPANEL_FTP_DIR || 'public_html/myapp/' }}"
           echo "🔗 Live URL: https://benzflex.com"
           echo ""
           echo "📋 POST-DEPLOYMENT CHECKLIST:"
@@ -151,7 +283,29 @@ jobs:
           echo "  2. ✅ Verify cPanel Node.js App 'Startup File' = start.sh"
           echo "  3. ✅ Verify NODE_OPTIONS env var = --max-old-space-size=3072 --expose-gc"
           echo "  4. ✅ Verify all environment variables are set in cPanel"
-          echo "  5. ✅ Restart Node.js app in cPanel"
-          echo "  6. ✅ Check logs for 'Server running' message"
+          echo "  5. ✅ Install dependencies: npm install --production (on server)"
+          echo "  6. ✅ Restart Node.js app in cPanel"
+          echo "  7. ✅ Check logs for 'Server running' message"
           echo ""
           echo "⚠️  IMPORTANT: config.env was NOT deployed (use cPanel environment variables)"
+
+      # ========================================
+      # Step 10: Handle Upload Errors
+      # ========================================
+      - name: 🧠 Handle upload errors
+        if: failure()
+        run: |
+          echo "⚠️ FTP upload failed!"
+          echo ""
+          echo "Common causes:"
+          echo "  1. Disk full (552 error) - Clean up server or reduce deployment size"
+          echo "  2. FTP credentials incorrect - Verify secrets in GitHub"
+          echo "  3. Server directory doesn't exist - Check CPANEL_FTP_DIR secret"
+          echo "  4. Network timeout - Check server connectivity"
+          echo ""
+          echo "Solutions:"
+          echo "  - Clean up disk space on server"
+          echo "  - Verify FTP credentials in GitHub Secrets"
+          echo "  - Check server directory path"
+          echo "  - Wait a few minutes and retry manually"
+          exit 1
