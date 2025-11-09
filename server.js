@@ -14,18 +14,45 @@ const heapLimit = v8.getHeapStatistics().heap_size_limit / 1024 / 1024;
 // Log Node.js options for debugging (especially important for cPanel)
 // Reduced to 1.5GB minimum to leave room for WebAssembly (undici) which allocates outside V8 heap
 const MIN_REQUIRED_MEMORY = 1536; // Minimum 1.5GB required (leaves 2.5GB for WebAssembly/system)
-
-if (process.env.NODE_OPTIONS) {
-  console.log(`✅ NODE_OPTIONS: ${process.env.NODE_OPTIONS}`);
-} else {
-  console.error(`❌ CRITICAL: NODE_OPTIONS not set!`);
-  console.error(`❌ This will cause "Out of memory" errors in cPanel.`);
-  console.error(`❌ SOLUTION: Use start.sh as the startup file in cPanel Node.js App settings.`);
-  console.error(`❌ See CPANEL_CRITICAL_FIX.md for detailed instructions.`);
-}
+const MAX_EXPECTED_MEMORY = 2560; // 2.5GB - if above this, flags likely not applied
+const TARGET_MEMORY = 2048; // 2GB target
 
 console.log(`📋 Node.js version: ${process.version}`);
 console.log(`📋 Current max memory: ${heapLimit.toFixed(2)}MB`);
+
+// Check memory limit first - this is the real indicator
+// If memory is correct, start.sh is working (even if NODE_OPTIONS env var isn't set)
+const memoryIsCorrect = heapLimit >= MIN_REQUIRED_MEMORY && heapLimit <= MAX_EXPECTED_MEMORY;
+
+if (process.env.NODE_OPTIONS) {
+  console.log(`✅ NODE_OPTIONS: ${process.env.NODE_OPTIONS}`);
+} else if (!memoryIsCorrect) {
+  // Only warn about NODE_OPTIONS if memory is ALSO wrong
+  // If memory is correct, start.sh is working (it sets flags directly, not via env var)
+  console.warn(`⚠️  NODE_OPTIONS environment variable not set`);
+  console.warn(`⚠️  However, if memory limit is correct, start.sh is working correctly.`);
+}
+
+// MEMORY OPTIMIZATION: Check if memory flags are not applied (heap too high)
+// Expected heap limit should be ~2048MB (2GB), but default Node.js gives ~4GB
+if (heapLimit > MAX_EXPECTED_MEMORY) {
+  console.error(`\n❌ CRITICAL: Memory flags NOT applied!`);
+  console.error(`❌ Current memory limit: ${heapLimit.toFixed(2)}MB (too high!)`);
+  console.error(`❌ Expected limit: ~${TARGET_MEMORY}MB (2GB)`);
+  console.error(`❌ This indicates Node.js memory flags are NOT being used!`);
+  console.error(`\n🔧 IMMEDIATE FIX REQUIRED:`);
+  console.error(`1. In cPanel → Node.js App → Set "Startup File" to: start.sh`);
+  console.error(`2. Verify environment variable exists: NODE_OPTIONS=--max-old-space-size=2048 --expose-gc`);
+  console.error(`3. RESTART your app (memory flags only apply on startup)`);
+  console.error(`4. After restart, you should see: "Current max memory: ~2048.00MB"`);
+  console.error(`\n💡 Note: start.sh sets memory flags directly, so NODE_OPTIONS env var may not be set, but memory flags still work.\n`);
+  
+  // Don't exit in development, but warn heavily
+  if (process.env.NODE_ENV === 'production') {
+    console.error(`⚠️  WARNING: Running with default memory limit. This may cause crashes!`);
+    console.error(`⚠️  The server will continue, but you MUST fix this before production use.`);
+  }
+}
 
 // Check if memory is too low
 if (heapLimit < MIN_REQUIRED_MEMORY) {
@@ -35,15 +62,20 @@ if (heapLimit < MIN_REQUIRED_MEMORY) {
   console.error(`❌ Your server will crash with "Out of memory" errors!`);
   console.error(`\n🔧 IMMEDIATE FIX REQUIRED:`);
   console.error(`1. In cPanel → Node.js App → Set "Startup File" to: start.sh`);
-  console.error(`2. Add environment variable: NODE_OPTIONS=--max-old-space-size=2048 --expose-gc`);
+  console.error(`2. Ensure start.sh is set as startup file in cPanel Node.js App`);
   console.error(`3. Restart your app`);
-  console.error(`\n📖 See CPANEL_FIX_STEPS.md for step-by-step instructions.\n`);
+  console.error(`\n💡 Note: start.sh sets memory flags directly via exec node command.\n`);
   
   // Don't exit in development, but warn heavily
   if (process.env.NODE_ENV === 'production') {
     console.error(`❌ Exiting to prevent crashes. Fix the memory settings and restart.`);
     process.exit(1);
   }
+}
+
+// Success message if memory is in correct range
+if (heapLimit >= MIN_REQUIRED_MEMORY && heapLimit <= MAX_EXPECTED_MEMORY) {
+  console.log(`✅ Memory limit is correctly set: ${heapLimit.toFixed(2)}MB (target: ${TARGET_MEMORY}MB)`);
 }
 
 // Validate environment variables
@@ -104,31 +136,19 @@ const startServer = async () => {
     app.set("io", io); // Make io available to routes/controllers
     console.log(`🔌 Socket.io initialized`);
     
-    // Memory monitoring in production (store interval reference for cleanup)
+    // MEMORY OPTIMIZATION: Use dedicated memory monitoring utility
+    // This provides better memory tracking and only logs when needed
     let memoryMonitorInterval = null;
     if (process.env.NODE_ENV === "production") {
-      memoryMonitorInterval = setInterval(() => {
-        const used = process.memoryUsage();
-        const heapUsedMB = (used.heapUsed / 1024 / 1024).toFixed(2);
-        const heapTotalMB = (used.heapTotal / 1024 / 1024).toFixed(2);
-        const rssMB = (used.rss / 1024 / 1024).toFixed(2);
-        
-        // Log if memory usage is high (1.5GB threshold for 2GB limit, with CloudLinux LVE 4GB cap)
-        // WebAssembly (undici) uses memory outside heap, so we need lower threshold
-        if (used.heapUsed > 1.5 * 1024 * 1024 * 1024) { // 1.5GB threshold (75% of 2GB, leaves room for WebAssembly)
-          console.warn(`⚠️  High memory usage: Heap ${heapUsedMB}MB / ${heapTotalMB}MB, RSS: ${rssMB}MB`);
-          console.warn(`⚠️  Memory is approaching 4GB limit. Consider optimizing or scaling.`);
-          
-          // Force garbage collection if available
-          if (global.gc) {
-            global.gc();
-            const afterGC = process.memoryUsage();
-            console.log(`🧹 GC ran. Memory after: ${(afterGC.heapUsed / 1024 / 1024).toFixed(2)}MB`);
-          }
-        } else {
-          console.log(`💾 Memory: Heap ${heapUsedMB}MB / ${heapTotalMB}MB, RSS: ${rssMB}MB`);
-        }
-      }, 60000); // Every minute
+      const { startMemoryMonitoring } = require("./utils/memoryMonitor");
+      // Monitor every 10 minutes, log only when heap exceeds 1.5GB
+      // This reduces log noise and memory overhead from frequent monitoring
+      memoryMonitorInterval = startMemoryMonitoring({
+        intervalMs: 600000, // 10 minutes (reduced from 1 minute to save CPU/memory)
+        heapThresholdMB: 1500, // 1.5GB threshold (75% of 2GB limit)
+        logAlways: false, // Only log when threshold exceeded
+      });
+      console.log("✅ Memory monitoring started (logs every 10 minutes or when threshold exceeded)");
     }
     
     // Graceful shutdown

@@ -1,17 +1,20 @@
-name: 🚀 FTP Deploy to cPanel
+name: 🚀 Deploy Backend to cPanel
 
 # Workflow triggers
 on:
   push:
     branches: [main]
-  workflow_dispatch: # Allows manual triggering from GitHub Actions tab
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch: # Allows manual triggering
 
 jobs:
   deploy:
-    name: 🎉 Deploy to Production
+    name: 🎉 Deploy Backend to Production
     runs-on: ubuntu-latest
     environment:
-      name: server
+      name: production
       url: https://benzflex.com
 
     steps:
@@ -20,6 +23,8 @@ jobs:
       # ========================================
       - name: 🚚 Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       # ========================================
       # Step 2: Setup Node.js
@@ -27,497 +32,423 @@ jobs:
       - name: ⚙️ Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: "20"
           cache: "npm"
+          cache-dependency-path: backend/package-lock.json
 
       # ========================================
       # Step 3: Verify FTP Secrets
       # ========================================
       - name: 🔍 Verify FTP Secrets
-        env:
-          FTP_SERVER: ${{ secrets.CPANEL_FTP_SERVER || secrets.FTP_SERVER }}
-          FTP_USERNAME: ${{ secrets.CPANEL_FTP_USER || secrets.FTP_USERNAME }}
-          FTP_PASSWORD: ${{ secrets.CPANEL_FTP_PASS || secrets.FTP_PASSWORD }}
-          FTP_DIR: ${{ secrets.CPANEL_FTP_DIR || 'public_html/myapp/' }}
-          FTP_PORT: ${{ secrets.CPANEL_FTP_PORT || '21' }}
+        id: verify-secrets
         run: |
           echo "=== Verifying FTP Secrets ==="
+          
+          FTP_SERVER="${{ secrets.CPANEL_FTP_SERVER || secrets.FTP_SERVER }}"
+          FTP_USERNAME="${{ secrets.CPANEL_FTP_USER || secrets.FTP_USERNAME }}"
+          FTP_PASSWORD="${{ secrets.CPANEL_FTP_PASS || secrets.FTP_PASSWORD }}"
+          FTP_DIR="${{ secrets.CPANEL_FTP_DIR || 'public_html/myapp/backend' }}"
+          FTP_PORT="${{ secrets.CPANEL_FTP_PORT || '21' }}"
+          
           if [ -z "$FTP_SERVER" ] || [ -z "$FTP_USERNAME" ] || [ -z "$FTP_PASSWORD" ]; then
-            echo "::error::One or more FTP secrets are missing!"
-            echo "Required secrets:"
+            echo "::error::Missing required FTP secrets!"
+            echo ""
+            echo "Required GitHub Secrets:"
             echo "  - CPANEL_FTP_SERVER (or FTP_SERVER)"
             echo "  - CPANEL_FTP_USER (or FTP_USERNAME)"
             echo "  - CPANEL_FTP_PASS (or FTP_PASSWORD)"
-            echo "Optional:"
-            echo "  - CPANEL_FTP_DIR (default: public_html/myapp/)"
+            echo ""
+            echo "Optional Secrets:"
+            echo "  - CPANEL_FTP_DIR (default: public_html/myapp/backend)"
             echo "  - CPANEL_FTP_PORT (default: 21)"
             exit 1
           fi
+          
           echo "✅ FTP secrets verified"
-          echo "FTP_SERVER: ${FTP_SERVER:0:10}... (length: ${#FTP_SERVER})"
-          echo "FTP_USERNAME: ${FTP_USERNAME:0:5}... (length: ${#FTP_USERNAME})"
-          echo "FTP_PASSWORD: *** (length: ${#FTP_PASSWORD})"
+          echo "FTP_SERVER: ${FTP_SERVER:0:15}..."
+          echo "FTP_USERNAME: ${FTP_USERNAME:0:10}..."
           echo "FTP_DIR: $FTP_DIR"
           echo "FTP_PORT: $FTP_PORT"
+          
+          # Export for later steps
+          echo "FTP_SERVER=$FTP_SERVER" >> $GITHUB_ENV
+          echo "FTP_USERNAME=$FTP_USERNAME" >> $GITHUB_ENV
+          echo "FTP_PASSWORD=$FTP_PASSWORD" >> $GITHUB_ENV
+          echo "FTP_DIR=$FTP_DIR" >> $GITHUB_ENV
+          echo "FTP_PORT=$FTP_PORT" >> $GITHUB_ENV
 
       # ========================================
-      # Step 4: Install Dependencies
+      # Step 4: Navigate to Backend Directory
       # ========================================
-      - name: 📦 Install dependencies
+      - name: 📁 Navigate to backend
         run: |
-          echo "Installing production dependencies..."
-          # Use npm install instead of npm ci to handle lock file sync issues
-          npm install --omit=dev --legacy-peer-deps
-          npm cache clean --force
+          cd backend
+          echo "Current directory: $(pwd)"
+          echo "Backend files:"
+          ls -la | head -20
+          echo "BACKEND_DIR=$(pwd)" >> $GITHUB_ENV
+
+      # ========================================
+      # Step 5: Install Dependencies (for scripts)
+      # ========================================
+      - name: 📦 Install dependencies for scripts
+        working-directory: backend
+        run: |
+          echo "Installing basic-ftp for pre-deployment checks..."
+          npm install basic-ftp --no-save --legacy-peer-deps
           echo "✅ Dependencies installed"
 
       # ========================================
-      # Step 5: Clean Build Artifacts & Old Files
+      # Step 6: Check Remote Disk Space
       # ========================================
-      - name: 🧹 Clean unnecessary files before deployment
+      - name: 💾 Check remote disk space
+        id: check-disk-space
+        working-directory: backend
         run: |
-          echo "🧹 Cleaning build artifacts and old files..."
-          
-          # Remove large directories that shouldn't be deployed
-          echo "Removing node_modules..."
-          rm -rf node_modules
-          
-          # Remove version control
-          echo "Removing .git and .github..."
-          rm -rf .git .github
-          
-          # Remove logs and temp files
-          echo "Removing logs and temp files..."
-          rm -rf logs tmp .tmp
-          find . -type f -name "*.log" -delete
-          find . -type f -name "*.tmp" -delete
-          
-          # Remove test files
-          echo "Removing test files..."
-          find . -type f -name "test-*.js" -delete
-          find . -type f -name "*.test.js" -delete
-          find . -type f -name "*.spec.js" -delete
-          
-          # Remove monitoring/debug scripts
-          echo "Removing debug scripts..."
-          find . -type f -name "monitor-*.js" -delete
-          find . -type f -name "quick-*.js" -delete
-          find . -type f -name "run-*.js" -delete
-          
-          # Remove documentation
-          echo "Removing documentation files..."
-          find . -type f -name "*.md" -delete
-          
-          # Remove archives
-          echo "Removing archive files..."
-          find . -type f -name "*.zip" -delete
-          find . -type f -name "*.tar.gz" -delete
-          
-          # Remove environment files (use cPanel env vars instead)
-          echo "Removing environment files..."
-          find . -type f -name "config.env" -delete
-          find . -type f -name ".env*" -delete
-          find . -type f -name "*.env" -delete
-          
-          # Remove scripts folder (not needed in production)
-          echo "Removing scripts folder..."
-          rm -rf scripts
-          
-          # Calculate size after cleaning
-          CLEAN_SIZE=$(du -sh . | cut -f1)
-          echo "📦 Size after cleaning: $CLEAN_SIZE"
-          echo "✅ Cleaning complete"
+          echo "Checking remote server disk space..."
+          node .github/scripts/checkDiskSpace.js
+        env:
+          FTP_SERVER: ${{ env.FTP_SERVER }}
+          FTP_USERNAME: ${{ env.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ env.FTP_PASSWORD }}
+          FTP_DIR: ${{ env.FTP_DIR }}
+          FTP_PORT: ${{ env.FTP_PORT }}
 
       # ========================================
-      # Step 6: Prepare Deployment Package
+      # Step 7: Verify Remote Directories
       # ========================================
-      - name: 🧹 Prepare deployment package (minimal size)
+      - name: 🧱 Verify remote directories
+        id: verify-dirs
+        working-directory: backend
         run: |
-          echo "Preparing minimal deployment package..."
+          echo "Verifying remote FTP directories..."
+          node .github/scripts/checkFtpDirs.js
+        env:
+          FTP_SERVER: ${{ env.FTP_SERVER }}
+          FTP_USERNAME: ${{ env.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ env.FTP_PASSWORD }}
+          FTP_DIR: ${{ env.FTP_DIR }}
+          FTP_PORT: ${{ env.FTP_PORT }}
+
+      # ========================================
+      # Step 8: Prepare Deployment Package
+      # ========================================
+      - name: 🧹 Prepare deployment package
+        working-directory: backend
+        run: |
+          echo "Preparing clean deployment package..."
+          
+          # Create deployment directory
           rm -rf deployment
           mkdir -p deployment
-
-          # Copy essential files only to minimize deployment size
-          # This reduces deployment from ~100MB to ~5-10MB
-          rsync -av \
-                    --exclude='node_modules' \
-                    --exclude='.git' \
-                    --exclude='test' \
-                    --exclude='.github/workflows' \
-                    --exclude='deployment' \
-                    --exclude='config.env' \
-                    --exclude='*.env' \
-                    --exclude='.env*' \
-                    --exclude='*.log' \
-                    --exclude='*.md' \
-                    --exclude='**/*.md' \
-                    --exclude='test-*.js' \
-                    --exclude='quick-*.js' \
-                    --exclude='monitor-*.js' \
-                    --exclude='run-*.js' \
-                    --exclude='*.sh' \
-                    --exclude='Archive.zip' \
-                    --exclude='production-run.log' \
-                    --exclude='memory-monitor-report.json' \
-                    --exclude='scripts' \
-                    --exclude='.gitignore' \
-                    --exclude='README.md' \
-                    --exclude='tmp' \
-                    --exclude='logs' \
-                    ./ ./deployment/
-
-          # CRITICAL: Copy start.sh separately (was excluded by *.sh pattern)
-          cp start.sh deployment/start.sh
-          chmod +x deployment/start.sh
           
-          # CRITICAL: Ensure .github/scripts directory exists for verification script
-          # (Note: The script runs BEFORE deployment, so it needs to be available in the runner)
-          # We don't deploy .github/scripts, but we need it during the workflow
+          # Copy files with exclusions using rsync
+          rsync -av \
+            --exclude='node_modules' \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='test' \
+            --exclude='tests' \
+            --exclude='*.test.js' \
+            --exclude='*.spec.js' \
+            --exclude='logs' \
+            --exclude='*.log' \
+            --exclude='*.md' \
+            --exclude='**/*.md' \
+            --exclude='config.env' \
+            --exclude='*.env' \
+            --exclude='.env*' \
+            --exclude='tmp' \
+            --exclude='temp' \
+            --exclude='deployment' \
+            --exclude='production-archive' \
+            --exclude='production-package' \
+            --exclude='test-*.js' \
+            --exclude='quick-*.js' \
+            --exclude='monitor-*.js' \
+            --exclude='run-*.js' \
+            --exclude='check-*.js' \
+            --exclude='analyze-*.js' \
+            --exclude='cpanel-diagnose.sh' \
+            --exclude='create-production-archive.sh' \
+            --exclude='*.zip' \
+            --exclude='*.tar.gz' \
+            --exclude='.gitignore' \
+            --exclude='.DS_Store' \
+            --exclude='*.swp' \
+            --exclude='*.swo' \
+            --exclude='.vscode' \
+            --exclude='.idea' \
+            --exclude='coverage' \
+            --exclude='.nyc_output' \
+            --exclude='scripts' \
+            ./ ./deployment/
+          
+          # CRITICAL: Ensure start.sh is included and executable
+          if [ -f "start.sh" ]; then
+            cp start.sh deployment/start.sh
+            chmod +x deployment/start.sh
+            echo "✅ start.sh included and made executable"
+          else
+            echo "❌ ERROR: start.sh not found!"
+            exit 1
+          fi
           
           # Calculate deployment size
           DEPLOY_SIZE=$(du -sh deployment | cut -f1)
           echo "📦 Deployment package size: $DEPLOY_SIZE"
-          echo ""
-          echo "📦 Essential files included:"
-          ls -la deployment/ | grep -E "(start.sh|server.js|app.js|package.json)" || echo "  Checking..."
+          
+          # Verify critical files
           echo ""
           echo "✅ Verifying critical files:"
-          [ -f "deployment/start.sh" ] && echo "  ✅ start.sh" || echo "  ❌ start.sh MISSING!"
-          [ -f "deployment/server.js" ] && echo "  ✅ server.js" || echo "  ❌ server.js MISSING!"
-          [ -f "deployment/package.json" ] && echo "  ✅ package.json" || echo "  ❌ package.json MISSING!"
-          [ ! -f "deployment/config.env" ] && echo "  ✅ config.env excluded (good)" || echo "  ⚠️  config.env included (should be excluded!)"
-
-      # ========================================
-      # Step 7: Check Remote Disk Space
-      # ========================================
-      # This step prevents "FTPError: 552 Disk full" by checking available disk space
-      # on the remote server before attempting deployment. It can also attempt
-      # automatic cleanup of temporary files if disk space is low.
-      - name: 💾 Check remote disk space
-        id: check-disk-space
-        run: |
-          echo "Installing basic-ftp for disk space check..."
-          npm install basic-ftp --no-save
-          echo "✅ basic-ftp installed"
-          echo ""
-          echo "Running disk space check script..."
-          node .github/scripts/checkDiskSpace.js
-        env:
-          FTP_SERVER: ${{ secrets.CPANEL_FTP_SERVER || secrets.FTP_SERVER }}
-          FTP_USERNAME: ${{ secrets.CPANEL_FTP_USER || secrets.FTP_USERNAME }}
-          FTP_PASSWORD: ${{ secrets.CPANEL_FTP_PASS || secrets.FTP_PASSWORD }}
-          FTP_DIR: ${{ secrets.CPANEL_FTP_DIR || 'public_html/myapp/' }}
-          FTP_PORT: ${{ secrets.CPANEL_FTP_PORT || '21' }}
- 
-
-      # ========================================
-      # Step 8: Verify Remote FTP Directories
-      # ========================================
-      # This step prevents "FTPError: 553 Can't open that file" by ensuring
-      # all required directories exist on the remote server before deployment.
-      # The script checks and creates missing folders like /controllers, /models, etc.
-      - name: 🧱 Verify remote directories exist
-        id: verify-dirs
-        run: |
-          echo "Installing basic-ftp for directory verification..."
-          npm install basic-ftp --no-save
-          echo "✅ basic-ftp installed"
-          echo ""
-          echo "Running FTP directory verification script..."
-          node .github/scripts/checkFtpDirs.js
-        env:
-          FTP_SERVER: ${{ secrets.CPANEL_FTP_SERVER || secrets.FTP_SERVER }}
-          FTP_USERNAME: ${{ secrets.CPANEL_FTP_USER || secrets.FTP_USERNAME }}
-          FTP_PASSWORD: ${{ secrets.CPANEL_FTP_PASS || secrets.FTP_PASSWORD }}
-          FTP_DIR: ${{ secrets.CPANEL_FTP_DIR || 'public_html/myapp/' }}
-          FTP_PORT: ${{ secrets.CPANEL_FTP_PORT || '21' }}
+          CRITICAL_FILES=(
+            "server.js"
+            "app.js"
+            "package.json"
+            "start.sh"
+            "services/stripeClient.js"
+            "services/cloudinaryClient.js"
+            "services/sendGridClient.js"
+            "middleware/bookingUpload.js"
+          )
           
+          ALL_OK=true
+          for file in "${CRITICAL_FILES[@]}"; do
+            if [ -f "deployment/$file" ]; then
+              echo "  ✅ $file"
+            else
+              echo "  ❌ $file MISSING!"
+              ALL_OK=false
+            fi
+          done
+          
+          if [ "$ALL_OK" = false ]; then
+            echo ""
+            echo "❌ ERROR: Critical files are missing from deployment package!"
+            exit 1
+          fi
+          
+          # Verify directories
+          echo ""
+          echo "✅ Verifying directories:"
+          DIRS=("controllers" "routes" "models" "services" "utils" "middleware" "socket")
+          for dir in "${DIRS[@]}"; do
+            if [ -d "deployment/$dir" ]; then
+              echo "  ✅ $dir/"
+            else
+              echo "  ❌ $dir/ MISSING!"
+              exit 1
+            fi
+          done
+          
+          echo ""
+          echo "✅ Deployment package ready!"
 
       # ========================================
-      # Step 9: Deploy via FTP (with retry)
+      # Step 9: Deploy via FTP
       # ========================================
       - name: 📤 Deploy to cPanel via FTP
         id: ftp-deploy
-        continue-on-error: false
+        working-directory: backend
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.CPANEL_FTP_SERVER || secrets.FTP_SERVER }}
-          username: ${{ secrets.CPANEL_FTP_USER || secrets.FTP_USERNAME }}
-          password: ${{ secrets.CPANEL_FTP_PASS || secrets.FTP_PASSWORD }}
-          port: ${{ secrets.CPANEL_FTP_PORT || 21 }}
+          server: ${{ env.FTP_SERVER }}
+          username: ${{ env.FTP_USERNAME }}
+          password: ${{ env.FTP_PASSWORD }}
+          port: ${{ env.FTP_PORT }}
           local-dir: ./deployment/
-          server-dir: ${{ secrets.CPANEL_FTP_DIR || 'public_html/myapp/' }}
+          server-dir: ${{ env.FTP_DIR }}
           exclude: |
             node_modules/**
-            test/**
-            .git*
+            .git/**
             .github/**
-            deployment/**
-            config.env
-            *.env
-            .env*
+            test/**
+            tests/**
+            *.test.js
+            *.spec.js
+            logs/**
             *.log
             *.md
             **/*.md
+            config.env
+            *.env
+            .env*
+            tmp/**
+            temp/**
+            deployment/**
+            production-archive/**
+            production-package/**
             test-*.js
             quick-*.js
             monitor-*.js
             run-*.js
-            *.sh
-            !start.sh
-            Archive.zip
-            production-run.log
-            memory-monitor-report.json
-            scripts/**
+            check-*.js
+            analyze-*.js
+            cpanel-diagnose.sh
+            create-production-archive.sh
+            *.zip
+            *.tar.gz
             .gitignore
-            README.md
-            tmp/**
-            logs/**
+            .DS_Store
+            scripts/**
           dangerous-clean-slate: false
           log-level: verbose
-          timeout: 60000
+          timeout: 120000
           dry-run: false
 
       # ========================================
-      # Step 10: Retry on Failure (552 Disk Full)
-      # ========================================
-      - name: 🔄 Retry deployment on failure
-        if: failure() && steps.ftp-deploy.outcome == 'failure'
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          server: ${{ secrets.CPANEL_FTP_SERVER || secrets.FTP_SERVER }}
-          username: ${{ secrets.CPANEL_FTP_USER || secrets.FTP_USERNAME }}
-          password: ${{ secrets.CPANEL_FTP_PASS || secrets.FTP_PASSWORD }}
-          port: ${{ secrets.CPANEL_FTP_PORT || 21 }}
-          local-dir: ./deployment/
-          server-dir: ${{ secrets.CPANEL_FTP_DIR || 'public_html/myapp/' }}
-          exclude: |
-            node_modules/**
-            test/**
-            .git*
-            .github/**
-            deployment/**
-            config.env
-            *.env
-            .env*
-            *.log
-            *.md
-            **/*.md
-            test-*.js
-            quick-*.js
-            monitor-*.js
-            run-*.js
-            *.sh
-            !start.sh
-            Archive.zip
-            production-run.log
-            memory-monitor-report.json
-            scripts/**
-            .gitignore
-            README.md
-            tmp/**
-            logs/**
-          dangerous-clean-slate: false
-          log-level: verbose
-          timeout: 60000
-
-      # ========================================
-      # Step 11: Post-Deployment Instructions
+      # Step 10: Post-Deployment Summary
       # ========================================
       - name: 📋 Deployment Summary
         if: success()
         run: |
           echo ""
+          echo "🎉 ========================================"
           echo "🎉 DEPLOYMENT COMPLETED SUCCESSFULLY!"
-          echo "======================================"
-          echo "🌐 Application deployed to: ${{ secrets.CPANEL_FTP_DIR || 'public_html/myapp/' }}"
+          echo "🎉 ========================================"
+          echo ""
+          echo "🌐 Application deployed to: ${{ env.FTP_DIR }}"
           echo "🔗 Live URL: https://benzflex.com"
           echo ""
           echo "📋 POST-DEPLOYMENT CHECKLIST:"
-          echo "  1. ✅ Set start.sh permissions to 755 in cPanel File Manager"
-          echo "  2. ✅ Verify cPanel Node.js App 'Startup File' = start.sh"
-          echo "  3. ✅ Verify NODE_OPTIONS env var = --max-old-space-size=2048 --expose-gc"
-          echo "  4. ✅ Verify all environment variables are set in cPanel"
-          echo "  5. ✅ Install dependencies: npm install --production (on server)"
-          echo "  6. ✅ Restart Node.js app in cPanel"
-          echo "  7. ✅ Check logs for 'Server running' message"
           echo ""
-          echo "⚠️  IMPORTANT: config.env was NOT deployed (use cPanel environment variables)"
+          echo "1. ✅ Install Dependencies (on server):"
+          echo "   cd ~/public_html/myapp/backend"
+          echo "   npm install --production --legacy-peer-deps"
+          echo ""
+          echo "2. ✅ Set Environment Variables (in cPanel):"
+          echo "   - Go to: cPanel → Node.js App → Your App"
+          echo "   - Add/Update environment variables:"
+          echo "     • STRIPE_SECRET_KEY"
+          echo "     • CLOUDINARY_CLOUD_NAME"
+          echo "     • CLOUDINARY_API_KEY"
+          echo "     • CLOUDINARY_API_SECRET"
+          echo "     • SENDGRID_API_KEY"
+          echo "     • NODE_OPTIONS=--max-old-space-size=2048 --expose-gc"
+          echo "     • DEBUG_KEY"
+          echo "     • (All other required env vars)"
+          echo ""
+          echo "3. ✅ Set Startup File (in cPanel):"
+          echo "   - Go to: cPanel → Node.js App → Your App"
+          echo "   - Set 'Startup File' to: start.sh"
+          echo "   - OR: backend/start.sh (if path is relative to app root)"
+          echo ""
+          echo "4. ✅ Set File Permissions (in cPanel File Manager):"
+          echo "   - Navigate to: ~/public_html/myapp/backend/"
+          echo "   - Right-click start.sh → Change Permissions → 755"
+          echo ""
+          echo "5. ✅ Restart Node.js App:"
+          echo "   - Go to: cPanel → Node.js App → Your App"
+          echo "   - Click 'Restart'"
+          echo ""
+          echo "6. ✅ Verify Deployment:"
+          echo "   - Check logs: cPanel → Node.js App → Logs"
+          echo "   - Look for: '✅ Memory limit is correctly set: 2096.00MB'"
+          echo "   - Look for: 'Server running on port...'"
+          echo "   - Test API endpoints"
+          echo ""
+          echo "⚠️  IMPORTANT:"
+          echo "   • config.env was NOT deployed (use cPanel environment variables)"
+          echo "   • node_modules must be installed on the server"
+          echo "   • start.sh must be executable (755 permissions)"
 
       # ========================================
-      # Step 11.5: Capture Error Details
+      # Step 11: Error Analysis
       # ========================================
-      - name: 🔍 Capture error details
+      - name: 🔍 Error Analysis
         if: always()
         run: |
           echo ""
           echo "🔍 ========================================"
-          echo "🔍 ERROR ANALYSIS"
+          echo "🔍 DEPLOYMENT STATUS ANALYSIS"
           echo "🔍 ========================================"
           echo ""
           
-          # Check step outcomes using always() context
           DISK_SPACE_OUTCOME="${{ steps.check-disk-space.outcome }}"
           VERIFY_DIRS_OUTCOME="${{ steps.verify-dirs.outcome }}"
           FTP_DEPLOY_OUTCOME="${{ steps.ftp-deploy.outcome }}"
           
-          echo "📊 Step Status Summary:"
-          echo "  Step 7 (💾 Check remote disk space): ${DISK_SPACE_OUTCOME:-unknown}"
-          echo "  Step 8 (🧱 Verify remote directories): ${VERIFY_DIRS_OUTCOME:-unknown}"
+          echo "📊 Step Status:"
+          echo "  Step 6 (💾 Check disk space): ${DISK_SPACE_OUTCOME:-unknown}"
+          echo "  Step 7 (🧱 Verify directories): ${VERIFY_DIRS_OUTCOME:-unknown}"
           echo "  Step 9 (📤 Deploy via FTP): ${FTP_DEPLOY_OUTCOME:-unknown}"
           echo ""
           
           if [ "${{ job.status }}" != "success" ]; then
-            echo "❌ DEPLOYMENT FAILED - Analysis below:"
+            echo "❌ DEPLOYMENT FAILED"
             echo ""
             
             if [ "$FTP_DEPLOY_OUTCOME" == "failure" ]; then
-              echo "::error::Step 9 (FTP Deploy) Failed"
-              echo "❌ FAILED STEP: Step 9 (📤 Deploy via FTP)"
+              echo "❌ FAILED: Step 9 (📤 Deploy via FTP)"
               echo ""
               echo "Common causes:"
-              echo "  • FTP connection refused → Check FTP_SERVER and FTP_PORT in GitHub Secrets"
-              echo "  • Authentication failed → Check FTP_USERNAME and FTP_PASSWORD in GitHub Secrets"
-              echo "  • Directory not found → Check FTP_DIR path matches cPanel directory"
-              echo "  • Disk full → Should have been caught in Step 7"
+              echo "  • FTP connection refused → Check FTP_SERVER and FTP_PORT"
+              echo "  • Authentication failed → Check FTP_USERNAME and FTP_PASSWORD"
+              echo "  • Directory not found → Check FTP_DIR path"
+              echo "  • Disk full → Should have been caught in Step 6"
               echo "  • Network timeout → Check server connectivity"
               echo ""
-              echo "🔍 Action Required:"
-              echo "  1. Scroll up to 'Step 9: 📤 Deploy via FTP' logs"
-              echo "  2. Look for error codes:"
-              echo "     • 552 = Disk full"
-              echo "     • 553 = Directory not found"
-              echo "     • 530 = Authentication failed"
-              echo "     • 421 = Connection timeout"
-              echo "     • ECONNREFUSED = Cannot connect to server"
-              echo "  3. Fix the issue based on the error code"
+              echo "🔍 Action: Scroll up to Step 9 logs for detailed error"
             elif [ "$VERIFY_DIRS_OUTCOME" == "failure" ]; then
-              echo "::error::Step 8 (Verify Directories) Failed"
-              echo "❌ FAILED STEP: Step 8 (🧱 Verify remote directories)"
+              echo "❌ FAILED: Step 7 (🧱 Verify directories)"
               echo ""
               echo "This usually means:"
               echo "  • Cannot create directories on FTP server"
               echo "  • FTP user lacks write permissions"
               echo "  • Directory path is incorrect"
-              echo "  • FTP connection issue"
               echo ""
-              echo "🔍 Action Required:"
-              echo "  1. Scroll up to 'Step 8: 🧱 Verify remote directories' logs"
-              echo "  2. Check which directories failed to create"
-              echo "  3. Verify FTP user has write permissions"
-              echo "  4. Check FTP_DIR path in GitHub Secrets"
+              echo "🔍 Action: Scroll up to Step 7 logs for details"
             elif [ "$DISK_SPACE_OUTCOME" == "failure" ]; then
-              echo "::error::Step 7 (Disk Space Check) Failed"
-              echo "❌ FAILED STEP: Step 7 (💾 Check remote disk space)"
+              echo "❌ FAILED: Step 6 (💾 Check disk space)"
               echo ""
               echo "This usually means:"
-              echo "  • Cannot connect to FTP server → Check FTP_SERVER and FTP_PORT"
-              echo "  • FTP credentials are incorrect → Check FTP_USERNAME and FTP_PASSWORD"
-              echo "  • Disk is full and cleanup failed → Check cPanel Disk Usage"
-              echo "  • Network/firewall issue → Check server connectivity"
+              echo "  • Cannot connect to FTP server"
+              echo "  • FTP credentials are incorrect"
+              echo "  • Disk is full"
               echo ""
-              echo "🔍 Action Required:"
-              echo "  1. Scroll up to 'Step 7: 💾 Check remote disk space' logs"
-              echo "  2. Check for connection errors or disk full messages"
-              echo "  3. Verify FTP credentials in GitHub Secrets"
-              echo "  4. Check cPanel → Disk Usage"
+              echo "🔍 Action: Scroll up to Step 6 logs for details"
             else
-              echo "::error::An earlier step failed"
-              echo "❌ FAILED STEP: Steps 1-6 (Setup/Preparation)"
+              echo "❌ FAILED: Earlier step (Steps 1-5)"
               echo ""
-              echo "Check the logs above to see which step failed."
-              echo "Common early step failures:"
-              echo "  • Step 3: Missing FTP secrets → Add secrets in GitHub"
-              echo "  • Step 4: npm install issues → Check package.json"
-              echo "  • Step 5-6: File cleanup/preparation issues"
+              echo "Check logs above to identify the failing step"
             fi
           else
             echo "✅ All steps completed successfully!"
           fi
+          
           echo ""
           echo "=========================================="
-          echo ""
-      
+
       # ========================================
-      # Step 12: Handle Upload Errors
+      # Step 12: Final Error Handler
       # ========================================
-      - name: 🧠 Handle upload errors
+      - name: 🧠 Final Error Handler
         if: failure()
         run: |
           echo ""
           echo "❌ ========================================"
-          echo "❌ FTP DEPLOYMENT FAILED"
+          echo "❌ DEPLOYMENT FAILED"
           echo "❌ ========================================"
           echo ""
-          echo "🔍 IMPORTANT: Scroll up to see the ACTUAL error message!"
-          echo "   The error details are in the steps above this message."
-          echo "   Look for the '🔍 ERROR ANALYSIS' section above."
+          echo "📋 Quick Troubleshooting:"
           echo ""
-          echo "📋 Troubleshooting Steps:"
+          echo "1️⃣  Check GitHub Secrets:"
+          echo "   Repository → Settings → Secrets and variables → Actions"
+          echo "   Required: CPANEL_FTP_SERVER, CPANEL_FTP_USER, CPANEL_FTP_PASS"
           echo ""
-          echo "1️⃣  Find the Actual Error:"
-          echo "   - Scroll up in the logs to find the failing step"
-          echo "   - Look for error messages with codes like:"
-          echo "     • 552 = Disk full"
-          echo "     • 553 = Directory not found"
-          echo "     • 530 = Authentication failed"
-          echo "     • 421 = Connection timeout"
-          echo "     • ECONNREFUSED = Cannot connect to server"
+          echo "2️⃣  Check Server Status:"
+          echo "   • Log into cPanel → File Manager"
+          echo "   • Verify target directory exists: ${{ env.FTP_DIR }}"
+          echo "   • Check disk space: cPanel → Disk Usage"
           echo ""
-          echo "2️⃣  Check Which Step Failed:"
-          echo "   - Step 7 (💾 Check remote disk space) = Disk space issue"
-          echo "   - Step 8 (🧱 Verify directories) = Directory creation issue"
-          echo "   - Step 9 (📤 Deploy via FTP) = Upload/connection issue"
+          echo "3️⃣  Common Error Codes:"
+          echo "   • 552 = Disk full"
+          echo "   • 553 = Directory not found"
+          echo "   • 530 = Authentication failed"
+          echo "   • 421 = Connection timeout"
+          echo "   • ECONNREFUSED = Cannot connect"
           echo ""
-          echo "3️⃣  Verify GitHub Secrets:"
-          echo "   - Go to: Repository → Settings → Secrets and variables → Actions"
-          echo "   - Required secrets (use CPANEL_* or FTP_* versions):"
-          echo "     • CPANEL_FTP_SERVER (or FTP_SERVER)"
-          echo "     • CPANEL_FTP_USER (or FTP_USERNAME)"
-          echo "     • CPANEL_FTP_PASS (or FTP_PASSWORD)"
-          echo "   - Optional secrets:"
-          echo "     • CPANEL_FTP_DIR (default: public_html/myapp/)"
-          echo "     • CPANEL_FTP_PORT (default: 21)"
+          echo "4️⃣  Scroll up to see detailed error analysis"
           echo ""
-          echo "4️⃣  Check Server Status in cPanel:"
-          echo "   - Log into cPanel → File Manager"
-          echo "   - Verify target directory exists (check path in Step 3 logs)"
-          echo "   - Check disk space: cPanel → Disk Usage"
-          echo "   - Verify FTP account is active: cPanel → FTP Accounts"
-          echo "   - Test FTP connection manually if possible"
+          echo "💡 Pro Tip: Check the '🔍 Error Analysis' step above for specific guidance"
           echo ""
-          echo "5️⃣  Common Error Solutions:"
-          echo ""
-          echo "   Error 552 (Disk full):"
-          echo "   → Go to cPanel → File Manager"
-          echo "   → Delete old logs, temp files, backups"
-          echo "   → Check Disk Usage in cPanel"
-          echo "   → The disk space check step should have attempted cleanup"
-          echo ""
-          echo "   Error 553 (Directory not found):"
-          echo "   → Create the directory in cPanel File Manager"
-          echo "   → Ensure path matches CPANEL_FTP_DIR secret"
-          echo "   → Check Step 8 logs for which directories failed"
-          echo ""
-          echo "   Error 530 (Authentication failed):"
-          echo "   → Verify FTP username and password in GitHub Secrets"
-          echo "   → Check cPanel → FTP Accounts to confirm credentials"
-          echo "   → Ensure FTP account has access to target directory"
-          echo ""
-          echo "   Connection timeout/refused:"
-          echo "   → Verify FTP_SERVER hostname is correct"
-          echo "   → Check FTP_PORT (usually 21)"
-          echo "   → Ensure firewall allows FTP connections"
-          echo ""
-          echo "6️⃣  Quick Fixes to Try:"
-          echo "   a) Wait 2-3 minutes and retry the workflow"
-          echo "   b) Verify all GitHub Secrets are set correctly"
-          echo "   c) Check cPanel → Disk Usage for available space"
-          echo "   d) Manually create target directory if missing"
-          echo "   e) Test FTP connection with FileZilla or similar tool"
-          echo ""
-          echo "💡 Pro Tip:"
-          echo "   Check the '💾 Check remote disk space' step logs first"
-          echo "   It will show detailed connection and disk space information"
-          echo ""
-          exit 1

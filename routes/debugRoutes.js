@@ -47,5 +47,21 @@ router.get("/memory", debugRateLimit, debugController.getMemoryStats);
  */
 router.post("/memory/reset", debugRateLimit, debugController.resetMemoryBaseline);
 
+/**
+ * GET /api/v1/debug/diagnose
+ * 
+ * Production diagnostic endpoint that checks:
+ * - p-limit import status
+ * - Singleton services (Stripe, Cloudinary, SendGrid)
+ * - Middleware loading
+ * - Environment variables
+ * - Memory statistics
+ * 
+ * Security:
+ * - Requires NODE_ENV=production
+ * - Requires x-debug-key header matching DEBUG_KEY env var
+ */
+router.get("/diagnose", debugRateLimit, debugController.diagnose);
+
 module.exports = router;
 
