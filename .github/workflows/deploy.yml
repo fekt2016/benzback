@@ -66,6 +66,7 @@ jobs:
                     --exclude='.env*' \
                     --exclude='*.log' \
                     --exclude='*.md' \
+                    --exclude='**/*.md' \
                     --exclude='test-*.js' \
                     --exclude='quick-*.js' \
                     --exclude='monitor-*.js' \
@@ -115,6 +116,7 @@ jobs:
             .env*
             *.log
             *.md
+            **/*.md
             test-*.js
             quick-*.js
             monitor-*.js
