@@ -255,12 +255,12 @@ jobs:
         if: failure() && steps.ftp-deploy.outcome == 'failure'
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.CPANEL_FTP_SERVER || secrets.FTP_SERVER }}
-          username: ${{ secrets.CPANEL_FTP_USER || secrets.FTP_USERNAME }}
-          password: ${{ secrets.CPANEL_FTP_PASS || secrets.FTP_PASSWORD }}
-          port: ${{ secrets.CPANEL_FTP_PORT || 21 }}
+          server: ${{  secrets.FTP_SERVER }}
+          username: ${{  secrets.FTP_USERNAME }}
+          password: ${{  secrets.FTP_PASSWORD }}
+          
           local-dir: ./deployment/
-          server-dir: ${{ secrets.CPANEL_FTP_DIR || 'public_html/myapp/' }}
+          server-dir: /public_html/myapp/
           exclude: |
             node_modules/**
             test/**
