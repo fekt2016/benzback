@@ -12,14 +12,14 @@ const router = express.Router();
 
 router.use(authController.protect);
 
-router.get("/my", authController.restrictTo("user"), getNotifications);
-router.get("/unread-count", authController.restrictTo("user"), getUnreadCount);
-router.patch("/:id/read", authController.restrictTo("user"), markAsRead);
+router.get("/my", authController.restrictTo("user","admin"), getNotifications);
+router.get("/unread-count", authController.restrictTo("user","admin"), getUnreadCount);
+router.patch("/:id/read", authController.restrictTo("user","admin"), markAsRead);
 router.patch(
   "/:id/mark-all-read",
-  authController.restrictTo("user"),
+  authController.restrictTo("user","admin"),
   markAllAsRead
 );
-router.delete("/:id", authController.restrictTo("user"), deleteNotification);
+router.delete("/:id", authController.restrictTo("user","admin"), deleteNotification);
 
 module.exports = router;

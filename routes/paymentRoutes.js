@@ -6,13 +6,13 @@ const router = express.Router();
 router.use(authController.protect);
 router.post(
   "/create-checkout-session",
-  authController.restrictTo("user"),
+  authController.restrictTo("user", "admin"),
   paymentController.createStripePayment
 );
 
 router.get(
   "/confirmation/:bookingId",
-  authController.restrictTo("user"),
+  authController.restrictTo("user", "admin"),
   paymentController.getBookingConfirmation
 );
 module.exports = router;

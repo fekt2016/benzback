@@ -1,11 +1,7 @@
+const { getFrontendUrl } = require("../utils/helper");
 
 exports.generatePasswordResetData = (req, user, resetToken) => {
-  const isProduction = process.env.NODE_ENV === "production";
-
-  const baseURL = isProduction
-    ? process.env.FRONTEND_URL || "https://benzflex.com"
-    : "http://localhost:5173";
-
+  const baseURL = getFrontendUrl();
   const resetURL = `${baseURL}/reset-password/${resetToken}`;
 
   return {
@@ -15,3 +11,6 @@ exports.generatePasswordResetData = (req, user, resetToken) => {
     expiryTime: "1 hour",
   };
 };
+
+// Re-export getFrontendUrl for backward compatibility
+exports.getFrontendUrl = getFrontendUrl;

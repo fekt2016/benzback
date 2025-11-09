@@ -18,6 +18,39 @@ const bookingSchema = new mongoose.Schema(
       ref: "Driver",
       default: null,
     },
+    professionalDriver: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Driver", // References unified Driver model with driverType: "professional"
+      default: null,
+    },
+    // Real-time driver assignment fields
+    driverAssigned: {
+      type: Boolean,
+      default: false,
+    },
+    driverRequestStatus: {
+      type: String,
+      enum: ['pending', 'accepted', 'expired', 'declined'],
+      default: null,
+    },
+    requestedAt: {
+      type: Date,
+      default: null,
+    },
+    acceptedDriver: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "DriverProfile", // Reference to DriverProfile model for logged-in drivers
+      default: null,
+    },
+    requestDriver: {
+      type: Boolean,
+      default: false,
+    },
+    driverServiceFee: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
      timeZone: {
     type: String,
     default: 'America/Chicago', // Central Time for St. Louis
@@ -40,7 +73,17 @@ const bookingSchema = new mongoose.Schema(
       type: String,
       default: "10:00 AM",
     },
-    
+    rentalDays: {
+      type: Number,
+      required: true,
+      min: 1,
+    },
+    depositAmount: {
+      type: Number,
+      required: true,
+      default: 150,
+    },
+  
     totalPrice: {
       type: Number,
       required: true,
@@ -56,6 +99,11 @@ const bookingSchema = new mongoose.Schema(
     extraCharges: {
       type: Number,
       default: 0,
+    },
+    driverServiceTotal: {
+      type: Number,
+      default: 0,
+      min: 0,
     },
     extraMiles: {
       type: Number,
@@ -130,18 +178,6 @@ const bookingSchema = new mongoose.Schema(
         return this.pickupLocation; // Default to pickup location
       },
     },
-    Drivers: [
-      {
-        driver: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "Driver",
-        },
-        addedAt: {
-          type: Date,
-          default: Date.now,
-        },
-      },
-    ],
     startMileage: {
       type: Number,
       min: 0,
@@ -169,13 +205,6 @@ const bookingSchema = new mongoose.Schema(
       notes: {
         type: String,
         default: "",
-      },
-      agreementSigned: {
-        type: Boolean,
-        default: false,
-      },
-      agreementSignedAt: {
-        type: Date,
       },
     },
 
@@ -250,9 +279,13 @@ const bookingSchema = new mongoose.Schema(
     },
     // Rental Terms
     rentalTerms: {
+      agreementSigned: {
+        type: Boolean,
+        default: false,
+      },
       mileageLimit: {
         type: Number,
-        default: 100,
+        default: 200,
       },
       fuelPolicy: {
         type: String,
@@ -269,7 +302,7 @@ const bookingSchema = new mongoose.Schema(
       },
       damageDeposit: {
         type: Number,
-        default: 500,
+        default: 150,
       },
     },
     // Status Tracking
@@ -321,32 +354,32 @@ const bookingSchema = new mongoose.Schema(
     ],
 
     // Flags & Metadata
-    isVerified: {
-      type: Boolean,
-      default: false,
-    },
-    verificationData: {
-      verifiedBy: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
-      },
-      verifiedAt: {
-        type: Date,
-      },
-      notes: {
-        type: String,
-      },
-    },
-    cancellationReason: {
-      type: String,
-    },
-    cancelledBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-    },
-    cancelledAt: {
-      type: Date,
-    },
+    // isVerified: {
+    //   type: Boolean,
+    //   default: false,
+    // },
+    // verificationData: {
+    //   verifiedBy: {
+    //     type: mongoose.Schema.Types.ObjectId,
+    //     ref: "User",
+    //   },
+    //   verifiedAt: {
+    //     type: Date,
+    //   },
+    //   notes: {
+    //     type: String,
+    //   },
+    // },
+    // cancellationReason: {
+    //   type: String,
+    // },
+    // cancelledBy: {
+    //   type: mongoose.Schema.Types.ObjectId,
+    //   ref: "User",
+    // },
+    // cancelledAt: {
+    //   type: Date,
+    // },
 
     // Timestamps
     createdAt: {

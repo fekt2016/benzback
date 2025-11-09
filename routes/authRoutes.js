@@ -22,14 +22,14 @@ router.use(authController.protect);
 router.get("/me", authController.getMe);
 router.patch(
   "/update-profile",
-  authController.restrictTo("user"),
+  authController.restrictTo("user", "admin"),
   authController.updateProfile
 );
 router.patch("/updateMyPassword", authController.updatePassword);
 
 router.patch(
   "/upload-avatar",
-  authController.restrictTo("user"),
+  authController.restrictTo("user", "admin"),
   uploadAvatar,
   processAvatar,
   authController.uploadAvatar

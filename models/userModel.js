@@ -14,20 +14,21 @@ const userSchema = new mongoose.Schema(
     phone: { 
       type: String, 
       required: [true, "Phone number is required"], 
-      unique: true,
+      unique: [true, "Phone number already exists"],
       trim: true,
     },
     email: { 
       type: String, 
       required: [true, "Email is required"], 
-      unique: true,
+      unique: [true, "Email already exists"],
       trim: true,
       lowercase: true,
       match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, "Please enter a valid email"]
     },
 
     password: { type: String, required: true, minlength: 8, select: false },
-    role: { type: String, enum: ["user", "admin"], default: "user" },
+    role: { type: String, enum: ["user", "admin", "driver"], default: "user" },
+    executive: { type: Boolean, default: false },
 
     address: { type: String, trim: true },
       timeZone: {
@@ -68,6 +69,38 @@ const userSchema = new mongoose.Schema(
       ref: "Preference"
     },
     
+    // User settings for notifications and preferences
+    settings: {
+      emailNotifications: { type: Boolean, default: true },
+      smsNotifications: { type: Boolean, default: false },
+      bookingReminders: { type: Boolean, default: true },
+      promotionalEmails: { type: Boolean, default: false },
+      marketingEmails: { type: Boolean, default: false },
+    },
+    
+    // Wishlist/Favorites
+    favorites: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Car",
+    }],
+    
+    // Referral system
+    referralCode: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+    referredBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    referralRewards: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    
     rentalStats: {
       totalRentals: { 
         type: Number, 
@@ -98,7 +131,11 @@ const userSchema = new mongoose.Schema(
         default: Date.now 
       }
     },
-
+createdBy:{
+type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+},
     otp: { type: String, select: false },
     otpExpires: { type: Date, select: false },
 
@@ -118,6 +155,13 @@ const userSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId, 
       ref: "Driver" 
     }],
+    
+    // Reference to professional driver record (for users with role: "driver")
+    driver: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Driver",
+      default: null,
+    },
 
     // Password reset fields
     passwordResetToken: { type: String, select: false },
@@ -133,7 +177,6 @@ const userSchema = new mongoose.Schema(
 );
 
 // Indexes for better performance
-
 
 // Virtual for user age
 userSchema.virtual('age').get(function() {

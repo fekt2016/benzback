@@ -1,8 +1,26 @@
 // avatarUploadMiddleware.js
 const multer = require("multer");
-const Stream = require("stream");
+const fs = require("fs");
+const path = require("path");
+const os = require("os");
 
-const multerStorage = multer.memoryStorage();
+// Use disk storage to reduce memory usage (important for cPanel)
+const multerStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    // Use system temp directory
+    const uploadDir = path.join(os.tmpdir(), "benz-uploads");
+    // Create directory if it doesn't exist
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    const uniqueName = `avatar-${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
+    cb(null, uniqueName);
+  },
+});
 
 const multerFilter = (req, file, cb) => {
   if (file.mimetype.startsWith("image")) {
@@ -26,58 +44,56 @@ exports.uploadAvatar = upload.single("avatar");
 
 exports.processAvatar = async (req, res, next) => {
   console.log("Processing avatar...", req.file);
+  let tempFilePath = null;
+  
   try {
     // Check if file exists
     if (!req.file) {
       return next(); // No file to process, continue to next middleware
     }
 
+    tempFilePath = req.file.path; // Store path for cleanup
     const cloudinary = req.app.get("cloudinary");
-
-    // Helper function to upload from buffer
-    const uploadFromBuffer = (buffer, folder, publicId) =>
-      new Promise((resolve, reject) => {
-        const uploadStream = cloudinary.uploader.upload_stream(
-          {
-            folder: `car_rental/${folder}`,
-            public_id: publicId,
-            transformation: [
-              {
-                width: 500,
-                height: 500,
-                crop: "fill",
-                gravity: "face",
-                quality: "auto",
-                fetch_format: "auto",
-              },
-            ],
-          },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve({
-                url: result.secure_url,
-                publicId: result.public_id,
-              });
-            }
-          }
-        );
-
-        const bufferStream = new Stream.PassThrough();
-        bufferStream.end(buffer);
-        bufferStream.pipe(uploadStream);
-      });
 
     // Generate unique public ID
     const publicId = `avatar-${req.user?.id || "user"}-${Date.now()}`;
 
-    // Upload avatar
-    const uploadResult = await uploadFromBuffer(
-      req.file.buffer,
-      "avatars",
-      publicId
-    );
+    // Upload from file path (disk storage) instead of buffer
+    const uploadResult = await new Promise((resolve, reject) => {
+      cloudinary.uploader.upload(
+        tempFilePath,
+        {
+          folder: `car_rental/avatars`,
+          public_id: publicId,
+          transformation: [
+            {
+              width: 500,
+              height: 500,
+              crop: "fill",
+              gravity: "face",
+              quality: "auto",
+              fetch_format: "auto",
+            },
+          ],
+        },
+        (err, result) => {
+          // Clean up temp file after upload
+          if (tempFilePath && fs.existsSync(tempFilePath)) {
+            fs.unlinkSync(tempFilePath);
+            tempFilePath = null; // Mark as cleaned
+          }
+          
+          if (err) {
+            reject(err);
+          } else {
+            resolve({
+              url: result.secure_url,
+              publicId: result.public_id,
+            });
+          }
+        }
+      );
+    });
 
     // Add avatar URL and public ID to request body
     req.body.avatar = uploadResult.url;
@@ -85,6 +101,14 @@ exports.processAvatar = async (req, res, next) => {
 
     next();
   } catch (err) {
+    // Cleanup temp file on error
+    if (tempFilePath && fs.existsSync(tempFilePath)) {
+      try {
+        fs.unlinkSync(tempFilePath);
+      } catch (cleanupErr) {
+        console.error(`Error cleaning up avatar file:`, cleanupErr);
+      }
+    }
     console.error("Avatar upload error:", err);
     next(new Error("Failed to upload avatar image"));
   }

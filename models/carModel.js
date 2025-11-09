@@ -16,7 +16,7 @@ const carSchema = new mongoose.Schema(
         "convertible",
         "sports",
       ],
-      // required: true,
+    
     },
     make: {
       type: String,
@@ -32,6 +32,7 @@ const carSchema = new mongoose.Schema(
         "Volkswagen",
         "Hyundai",
       ],
+      
       // required: true,
     },
     series: {
@@ -53,14 +54,11 @@ const carSchema = new mongoose.Schema(
         "EQC",
         "AMG GT",
       ],
-      // required: true,
+   default: "UNknown",
     },
     model: { type: String, required: true },
     year: { type: Number, required: true },
     pricePerDay: { type: Number, required: true },
-    licensePlate: { type: String, required: true, unique: true },
-
-    
     transmission: {
       type: String,
       enum: ["manual", "automatic"],
@@ -72,11 +70,7 @@ const carSchema = new mongoose.Schema(
       default: "petrol",
     },
     seats: { type: Number, default: 4 },
-
-  
     images: [String],
-
-   
     status: {
       type: String,
       enum: ["available", "rented", "maintenance"],
@@ -126,6 +120,11 @@ const carSchema = new mongoose.Schema(
           "Keyless Entry",
           "USB Charger",
           "Child Seat",
+          "Premium Sound System",
+          "Remote Start",
+          "Lane Assist",
+          "Adaptive Cruise Control",
+          "Wireless Charging"
         ],
       },
     ],

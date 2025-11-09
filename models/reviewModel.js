@@ -42,7 +42,7 @@ const reviewSchema = new mongoose.Schema(
 
 
 // ✅ Not unique — allow multiple reviews for same car from same user
-reviewSchema.index({ user: 1, car: 1 });
+// reviewSchema.index({ user: 1, car: 1 });
 
 // ✅ Auto-update car ratings when saving or deleting
 reviewSchema.post("save", async function () {

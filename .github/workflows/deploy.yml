@@ -1,88 +1,142 @@
-# name: 🚀 FTP Deployment for Express Backend
+name: 🚀 FTP Deployment for Express Backend
 
-# on:
-#   push:
-#     branches: [main]
+on:
+  push:
+    branches: [main]
 
-# jobs:
-#   deploy:
-#     name: 🎉 Deploy to Production
-#     runs-on: ubuntu-latest
-#     environment:
-#       name: server
-#       url: https://benzflex.com
+jobs:
+  deploy:
+    name: 🎉 Deploy to Production
+    runs-on: ubuntu-latest
+    environment:
+      name: server
+      url: https://benzflex.com
 
-#     steps:
-#       - name: 🚚 Checkout code
-#         uses: actions/checkout@v4
+    steps:
+      - name: 🚚 Checkout code
+        uses: actions/checkout@v4
 
-#       - name: ⚙️ Setup Node.js
-#         uses: actions/setup-node@v4
-#         with:
-#           node-version: "18"
-#           cache: "npm"
+      - name: ⚙️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
 
-#       - name: 🔍 Debug FTP Secrets
-#         env:
-#           FTP_SERVER: ${{ secrets.FTP_SERVER }}
-#           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
-#           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-#         run: |
-#           echo "=== Debugging FTP Secrets ==="
-#           echo "FTP_SERVER length: ${#FTP_SERVER}"
-#           echo "FTP_USERNAME length: ${#FTP_USERNAME}"
-#           echo "FTP_PASSWORD length: ${#FTP_PASSWORD}"
-#           if [ -z "$FTP_SERVER" ] || [ -z "$FTP_USERNAME" ] || [ -z "$FTP_PASSWORD" ]; then
-#             echo "::error::One or more FTP secrets are missing!"
-#             exit 1
-#           fi
-#           echo "✅ FTP secrets verified"
+      - name: 🔍 Debug FTP Secrets
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          echo "=== Debugging FTP Secrets ==="
+          echo "FTP_SERVER length: ${#FTP_SERVER}"
+          echo "FTP_USERNAME length: ${#FTP_USERNAME}"
+          echo "FTP_PASSWORD length: ${#FTP_PASSWORD}"
+          if [ -z "$FTP_SERVER" ] || [ -z "$FTP_USERNAME" ] || [ -z "$FTP_PASSWORD" ]; then
+            echo "::error::One or more FTP secrets are missing!"
+            exit 1
+          fi
+          echo "✅ FTP secrets verified"
 
-#       - name: 📦 Install dependencies
-#         run: |
-#           echo "Installing production dependencies..."
-#           npm ci --only=production --legacy-peer-deps
-#           npm cache clean --force
-#           echo "✅ Dependencies installed"
+      - name: 📦 Install dependencies
+        run: |
+          echo "Installing production dependencies..."
+          npm ci --only=production --legacy-peer-deps
+          npm cache clean --force
+          echo "✅ Dependencies installed"
 
-#       - name: 🧹 Prepare deployment package
-#         run: |
-#           echo "Preparing deployment package..."
-#           rm -rf deployment
-#           mkdir -p deployment
+      - name: 🧹 Prepare deployment package
+        run: |
+          echo "Preparing deployment package..."
+          rm -rf deployment
+          mkdir -p deployment
 
-#           # Copy all files except excluded ones
-#           rsync -av --exclude='node_modules' \
-#                     --exclude='.git' \
-#                     --exclude='test' \
-#                     --exclude='.github' \
-#                     --exclude='deployment' \
-#                     ./ ./deployment/
+          # Copy all files except excluded ones
+          rsync -av --exclude='node_modules' \
+                    --exclude='.git' \
+                    --exclude='test' \
+                    --exclude='.github' \
+                    --exclude='deployment' \
+                    --exclude='config.env' \
+                    --exclude='*.env' \
+                    --exclude='.env*' \
+                    --exclude='*.log' \
+                    --exclude='*.md' \
+                    --exclude='test-*.js' \
+                    --exclude='quick-*.js' \
+                    --exclude='monitor-*.js' \
+                    --exclude='run-*.js' \
+                    --exclude='*.sh' \
+                    --exclude='Archive.zip' \
+                    --exclude='production-run.log' \
+                    --exclude='memory-monitor-report.json' \
+                    ./ ./deployment/
 
-#           echo "📦 Deployment package contents:"
-#           ls -la deployment/
+          # CRITICAL: Copy start.sh separately and ensure it's included
+          # start.sh is essential for cPanel CloudLinux LVE memory limits
+          cp start.sh deployment/start.sh
+          chmod +x deployment/start.sh
+          
+          echo "📦 Deployment package contents:"
+          ls -la deployment/ | head -30
+          echo ""
+          echo "✅ Verifying critical files:"
+          [ -f "deployment/start.sh" ] && echo "  ✅ start.sh" || echo "  ❌ start.sh MISSING!"
+          [ -f "deployment/server.js" ] && echo "  ✅ server.js" || echo "  ❌ server.js MISSING!"
+          [ -f "deployment/package.json" ] && echo "  ✅ package.json" || echo "  ❌ package.json MISSING!"
+          [ ! -f "deployment/config.env" ] && echo "  ✅ config.env excluded (good - use cPanel env vars)" || echo "  ⚠️  config.env included (should be excluded!)"
 
-#       - name: 📤 Deploy via FTP
-#         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-#         with:
-#           server: ${{ secrets.FTP_SERVER }}
-#           username: ${{ secrets.FTP_USERNAME }}
-#           password: ${{ secrets.FTP_PASSWORD }}
-#           local-dir: ./deployment/
-#           server-dir: public_html/myapp/
-#           exclude: |
-#             node_modules/**
-#             test/**
-#             .git*
-#             .github/**
-#             deployment/**
-#           dangerous-clean-slate: false
-#           log-level: verbose
+      - name: 📤 Deploy via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./deployment/
+          server-dir: public_html/myapp/
+          exclude: |
+            node_modules/**
+            test/**
+            .git*
+            .github/**
+            deployment/**
+            config.env
+            *.env
+            .env*
+            *.log
+            *.md
+            test-*.js
+            quick-*.js
+            monitor-*.js
+            run-*.js
+            *.sh
+            !start.sh
+            Archive.zip
+            production-run.log
+            memory-monitor-report.json
+          dangerous-clean-slate: false
+          log-level: verbose
 
-#       - name: 📋 Deployment Summary
-#         run: |
-#           echo ""
-#           echo "🎉 DEPLOYMENT COMPLETED SUCCESSFULLY!"
-#           echo "======================================"
-#           echo "🌐 Application deployed to /benzback/"
-#           echo "🔗 Live URL: https://benzflex.com"
+      - name: 🔧 Set start.sh permissions (via FTP)
+        run: |
+          echo "⚠️  Note: start.sh permissions must be set to 755 in cPanel File Manager"
+          echo "⚠️  After deployment, go to cPanel → File Manager → backend folder"
+          echo "⚠️  Right-click start.sh → Change Permissions → Set to 755"
+
+      - name: 📋 Deployment Summary
+        run: |
+          echo ""
+          echo "🎉 DEPLOYMENT COMPLETED SUCCESSFULLY!"
+          echo "======================================"
+          echo "🌐 Application deployed to: public_html/myapp/"
+          echo "🔗 Live URL: https://benzflex.com"
+          echo ""
+          echo "📋 POST-DEPLOYMENT CHECKLIST:"
+          echo "  1. ✅ Set start.sh permissions to 755 in cPanel File Manager"
+          echo "  2. ✅ Verify cPanel Node.js App 'Startup File' = start.sh"
+          echo "  3. ✅ Verify NODE_OPTIONS env var = --max-old-space-size=3072 --expose-gc"
+          echo "  4. ✅ Verify all environment variables are set in cPanel"
+          echo "  5. ✅ Restart Node.js app in cPanel"
+          echo "  6. ✅ Check logs for 'Server running' message"
+          echo ""
+          echo "⚠️  IMPORTANT: config.env was NOT deployed (use cPanel environment variables)"

@@ -87,8 +87,8 @@ const tokenBlacklistSchema = new mongoose.Schema(
 );
 
 // Compound indexes for better query performance
-tokenBlacklistSchema.index({ token: 1, user: 1 });
-tokenBlacklistSchema.index({ user: 1, tokenType: 1 });
+// tokenBlacklistSchema.index({ token: 1, user: 1 });
+// tokenBlacklistSchema.index({ user: 1, tokenType: 1 });
 // tokenBlacklistSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 // Static method to check if token is blacklisted

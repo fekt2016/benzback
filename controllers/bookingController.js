@@ -6,23 +6,26 @@ const User = require("../models/userModel");
 const Driver = require("../models/driverModel");
 const mongoose = require("mongoose");
 const { notifyBookingCreated } = require("../services/notificationHelper");
-const RentalSession = require("../models/RentalSession");
+// const RentalSession = require("../models/RentalSession");
 const emailServices = require("../utils/emailServices");
+const moment = require("moment-timezone");
+const { logActivityWithSocket } = require("../utils/activityLogger");
 
 const calculateBookingDetails = (pickupDate, returnDate, pricePerDay) => {
   const pickup = new Date(pickupDate);
   const returnD = new Date(returnDate);
   const days = Math.ceil((returnD - pickup) / (1000 * 60 * 60 * 24));
+  const depositAmount = 150; // this amount will be refund after check-out, if there is no damage or exrtra fee
 
   if (isNaN(days) || days <= 0) {
     throw new AppError("Return date must be after pickup date", 400);
   }
 
   const basePrice = days * pricePerDay;
-  const taxAmount = basePrice * 0.08; // 8% tax
-  const totalPrice = basePrice + taxAmount;
+  // const taxAmount = basePrice * 0.08; // 8% tax
+  const totalPrice = basePrice + depositAmount;
 
-  return { days, basePrice, taxAmount, totalPrice };
+  return { days, basePrice, totalPrice, depositAmount };
 };
 
 // Helper function to determine booking status based on driver verification
@@ -32,44 +35,152 @@ const determineBookingStatus = (driver, hasDriverData = false) => {
   return "verification_pending";
 };
 
-exports.createBooking = catchAsync( async (req, res, next) => {
- 
+
+exports.createBooking = catchAsync(async (req, res, next) => {
+  const currentTimeInStLouis = moment.tz(new Date(), "America/Chicago");
+
   const {
     car,
     pickupDate,
     returnDate,
     pickupLocation,
     driverId,
-    pickupTime = "10:00 AM",
-    returnTime = "10:00 AM",
+    professionalDriverId,
+    pickupTime,
+    returnTime,
     licenseImage,
     insuranceImage,
     driverName,
+    acceptedTerm,
+    requestDriver, // New: Request real-time driver assignment
   } = req.body;
-  //Validate car availability
-  const carDoc = await Car.findById(car);
-  if (!carDoc) return next(new AppError("Car not found", 404));
-  if (carDoc.status !== "available") {
-    return next(new AppError("Car is not available", 400));
+
+  // ✅ Mutually exclusive driver validation
+  if (professionalDriverId && (driverId || licenseImage || insuranceImage)) {
+    return next(
+      new AppError(
+        "Cannot provide both a professional driver and a personal driver/driver info.",
+        400
+      )
+    );
   }
-  const { days, basePrice, taxAmount, totalPrice } = calculateBookingDetails(
-    pickupDate,
-    returnDate,
-    carDoc.pricePerDay
+
+  // ✅ Require at least one driver type OR requestDriver
+  if (!requestDriver && !professionalDriverId && !driverId && !(licenseImage && insuranceImage)) {
+    return next(
+      new AppError(
+        "You must provide either a professional driver, your own driver information, or request a driver.",
+        400
+      )
+    );
+  }
+
+  // ✅ If requestDriver is true, cannot provide other driver options
+  if (requestDriver && (professionalDriverId || driverId || licenseImage || insuranceImage)) {
+    return next(
+      new AppError(
+        "Cannot request driver and provide driver information at the same time.",
+        400
+      )
+    );
+  }
+
+  // 🕓 Parse times safely
+  let pickupTimeParsed = pickupTime || "10:00 AM";
+  let returnTimeParsed = returnTime || "10:00 AM";
+
+  if (pickupTimeParsed.includes("AM") || pickupTimeParsed.includes("PM")) {
+    pickupTimeParsed = moment(pickupTimeParsed, "h:mm A").format("HH:mm");
+  }
+  if (returnTimeParsed.includes("AM") || returnTimeParsed.includes("PM")) {
+    returnTimeParsed = moment(returnTimeParsed, "h:mm A").format("HH:mm");
+  }
+
+  const pickupDateTime = moment.tz(
+    `${pickupDate} ${pickupTimeParsed}`,
+    "YYYY-MM-DD HH:mm",
+    "America/Chicago"
+  );
+  const returnDateTime = moment.tz(
+    `${returnDate} ${returnTimeParsed}`,
+    "YYYY-MM-DD HH:mm",
+    "America/Chicago"
   );
 
+  if (!pickupDateTime.isValid() || !returnDateTime.isValid()) {
+    return next(new AppError("Invalid pickup or return date/time format.", 400));
+  }
+
+  if (pickupDateTime.isBefore(currentTimeInStLouis)) {
+    return next(
+      new AppError(
+        "Pickup time cannot be in the past (based on St. Louis local time).",
+        400
+      )
+    );
+  }
+
+  if (!returnDateTime.isAfter(pickupDateTime)) {
+    return next(
+      new AppError("Return time must be after pickup time.", 400)
+    );
+  }
+
+  // 🚗 Validate car availability
+  const carDoc = await Car.findById(car);
+  if (!carDoc) return next(new AppError("Car not found.", 404));
+  if (carDoc.status !== "available") {
+    return next(new AppError("Car is not available.", 400));
+  }
+
+  const { days, basePrice, depositAmount, totalPrice } =
+    calculateBookingDetails(pickupDate, returnDate, carDoc.pricePerDay);
+
   const session = await mongoose.startSession();
+  let createdBooking;
+
   try {
-    let driver;
-    let hasDriverData = false;
     await session.withTransaction(async () => {
+      let driver;
+      let professionalDriver = null;
+      let driverServiceTotal = 0;
+      let hasDriverData = false;
+
+      // 👨‍✈️ Professional driver flow
+      if (professionalDriverId) {
+        // Use unified Driver model (professional drivers are stored there)
+        professionalDriver = await Driver.findById(professionalDriverId)
+          .session(session);
+
+        if (
+          !professionalDriver ||
+          professionalDriver.driverType !== "professional" ||
+          professionalDriver.status !== "active" ||
+          !professionalDriver.verified
+        ) {
+          throw new AppError("Professional driver is not available.", 400);
+        }
+
+        // Calculate hours from pickup to return
+        const hours = Math.ceil((returnDateTime - pickupDateTime) / (1000 * 60 * 60));
+        if (hours <= 0) {
+          throw new AppError("Invalid time duration for driver service.", 400);
+        }
+
+        // Professional driver rate: $35/hour (fixed rate)
+        const HOURLY_RATE = 35;
+        driverServiceTotal = hours * HOURLY_RATE;
+        hasDriverData = true;
+      }
+
+      // 🚗 Customer-provided driver flow
       if (driverId) {
         driver = await Driver.findOne({
           _id: driverId,
           user: req.user._id,
         }).session(session);
-        driver;
-        if (!driver) throw new AppError("Driver not found", 404);
+
+        if (!driver) throw new AppError("Driver not found.", 404);
         hasDriverData = true;
       } else if (licenseImage && insuranceImage) {
         const [newDriver] = await Driver.create(
@@ -78,6 +189,7 @@ exports.createBooking = catchAsync( async (req, res, next) => {
               name: driverName,
               user: req.user._id,
               isDefault: true,
+              driverType: "rental", // Rental driver added from booking form
               license: { fileUrl: licenseImage, verified: false },
               insurance: { fileUrl: insuranceImage, verified: false },
             },
@@ -86,44 +198,68 @@ exports.createBooking = catchAsync( async (req, res, next) => {
         );
         driver = newDriver;
         hasDriverData = true;
+
         await User.findByIdAndUpdate(
           req.user._id,
           { $push: { drivers: driver._id } },
           { session }
         );
       }
-      const status = determineBookingStatus(driver, hasDriverData);
 
-      const [booking] = await Booking.create(
+      // 🧾 Determine booking status
+      let status;
+      if (requestDriver) {
+        status = "pending"; // Will change to pending_payment when driver accepts
+      } else if (professionalDriver) {
+        status = "pending_payment";
+      } else {
+        status = determineBookingStatus(driver, hasDriverData);
+      }
+
+      // 🧠 Create booking
+      [createdBooking] = await Booking.create(
         [
           {
             user: req.user._id,
             driver: driver ? driver._id : undefined,
+            professionalDriver: professionalDriver
+              ? professionalDriver._id
+              : undefined,
             car: carDoc._id,
             pickupDate,
             returnDate,
             pickupTime,
             returnTime,
+            rentalDays: days,
             pickupLocation,
             returnLocation: pickupLocation,
+            acceptedTerm,
             basePrice,
-            totalPrice,
-            taxAmount,
+            depositAmount,
+            driverServiceTotal,
+            driverServiceFee: driverServiceTotal,
+            totalPrice: totalPrice + driverServiceTotal,
             startMileage: carDoc.currentOdometer,
             status,
             rentalTerms: {
+              agreementSigned: acceptedTerm,
               mileageLimit: 200,
               fuelPolicy: "full-to-full",
               lateReturnFee: 0.5,
               cleaningFee: 75,
               damageDeposit: 500,
             },
+            // ✅ Phase 2: Real-time Professional Driver Flow
+            requestDriver: requestDriver || false,
+            driverRequestStatus: requestDriver ? "pending" : null,
+            requestedAt: requestDriver ? new Date() : null,
+            driverAssigned: requestDriver ? false : undefined, // Driver not yet assigned for real-time requests
             statusHistory: [
               {
-                status: status,
+                status,
                 timestamp: new Date(),
-                chnagedBy: req.user._id,
-                notes: "Booking created",
+                changedBy: req.user._id,
+                notes: requestDriver ? "Booking created - driver requested" : "Booking created",
               },
             ],
           },
@@ -131,47 +267,202 @@ exports.createBooking = catchAsync( async (req, res, next) => {
         { session }
       );
 
-      await booking.populate([
-        { path: "user", select: "name email" },
-        { path: "driver", select: "license insurance isDefault" },
-        { path: "car", select: "name model pricePerDay images" },
-      ]);
-      // Send notification
+      // 🔔 Send notification
       await notifyBookingCreated({
         userId: req.user._id,
         userName: req.user.name || "Customer",
         carName: `${carDoc.name} ${carDoc.model}`,
-        bookingId: Booking._id,
+        bookingId: createdBooking._id,
         carId: carDoc._id,
-        totalPrice,
-      });
-      res.status(201).json({
-        status: "success",
-        message: "Booking created successfully",
-        data: booking,
+        totalPrice: totalPrice + driverServiceTotal,
       });
     });
-  } catch (err) {
-    console.log("Booking error:", err);
-    return next(
-      err instanceof AppError
-        ? err
-        : new AppError("Booking failed. Please try again.", 500)
+
+    // Check if booking was created successfully
+    if (!createdBooking) {
+      throw new AppError("Failed to create booking. Please try again.", 500);
+    }
+
+    // Log activity (after transaction commits)
+    await logActivityWithSocket(
+      req,
+      "Booking Created",
+      {
+        bookingId: createdBooking._id,
+        carId: carDoc._id,
+        status,
+        requestDriver,
+      },
+      { userId: req.user._id, role: req.user.role }
     );
+
+    // 🧩 Populate relations after transaction commits
+    await createdBooking.populate([
+      { path: "user", select: "fullName email phone" },
+      { path: "driver", options: { strictPopulate: false } },
+      {
+        path: "professionalDriver",
+        select:
+          "name email phone rating hourlyRate fullName",
+        options: { strictPopulate: false },
+      },
+      {
+        path: "car",
+        select:
+          "name model series year pricePerDay images currentOdometer status",
+      },
+    ]);
+
+    // Note: Driver request will be emitted after payment is completed (in webhook handler)
+    // This ensures drivers only receive requests for paid bookings
+
+    // ✅ Respond to client
+    res.status(201).json({
+      status: "success",
+      message: requestDriver
+        ? "Booking created. Waiting for driver assignment..."
+        : "Booking created successfully",
+      data: createdBooking.toObject({ getters: true }),
+    });
+  } catch (err) {
+    console.error("Booking error:", err);
+    console.error("Booking error stack:", err.stack);
+    console.error("Booking error details:", {
+      message: err.message,
+      name: err.name,
+      code: err.code,
+    });
+    
+    // If it's already an AppError, pass it through
+    if (err instanceof AppError) {
+      return next(err);
+    }
+    
+    // For database errors, provide more specific messages
+    if (err.name === "ValidationError") {
+      return next(new AppError(`Validation error: ${err.message}`, 400));
+    }
+    
+    if (err.name === "MongoServerError" || err.code === 11000) {
+      return next(new AppError("A booking with this information already exists.", 400));
+    }
+    
+    // For other errors, include the actual error message if it's helpful
+    const errorMessage = err.message || "Booking failed. Please try again.";
+    return next(new AppError(errorMessage, 500));
   } finally {
-    session.endSession();
+    if (session) {
+      session.endSession();
+    }
   }
 });
-exports.getBooking = catchAsync( async (req, res, next) => {
+
+exports.getBooking = catchAsync(async (req, res, next) => {
   const { id } = req.params;
 
   const booking = await Booking.findById(id)
     .populate("car", "_id series model images pricePerDay")
     .populate("user", "fullName email phone")
-    .populate("driver");
-  if (!booking) return new AppError("Booking not Found", 404);
+    .populate("driver")
+    .populate({
+      path: "professionalDriver",
+      select: "name email phone rating hourlyRate fullName verified status"
+    })
+    .lean(); // Use lean() to reduce memory usage
+
+  if (!booking) {
+    return next(new AppError("Booking not found", 404));
+  }
+
   res.status(200).json({ status: "success", data: booking });
 });
+
+exports.getAllBooking = catchAsync(async (req, res, next) => {
+  // 1️⃣ Destructure query parameters with defaults
+  const {
+    page = 1,
+    limit = 20,
+    sort = "-createdAt",
+    fields,
+    status,
+    user,
+    car,
+    from,
+    to,
+    include = "user,car,driver"
+  } = req.query;
+
+  // 2️⃣ Build MongoDB filter
+  const filter = {};
+  if (status) filter.status = { $in: String(status).split(",") };
+  if (user) filter.user = user;
+  if (car) filter.car = car;
+
+  if (from || to) {
+    filter.createdAt = {};
+    if (from) filter.createdAt.$gte = new Date(from);
+    if (to) filter.createdAt.$lte = new Date(to);
+  }
+
+  // 3️⃣ Create query
+  let query = Booking.find(filter);
+
+  // 4️⃣ Field limiting (select specific fields)
+  if (fields) {
+    const projection = String(fields).split(",").join(" ");
+    query = query.select(projection);
+  }
+
+  // 5️⃣ Populate relations (user, car, driver, etc.)
+  const populateFields = String(include)
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  populateFields.forEach((p) => {
+    if (p === "user") query = query.populate("user", "fullName email phone");
+    if (p === "car") query = query.populate("car", "model series licensePlate images pricePerDay");
+    if (p === "driver") query = query.populate("driver", "name verified");
+  });
+
+  // 6️⃣ Sorting
+  if (sort) {
+    const sortBy = String(sort).split(",").join(" ");
+    query = query.sort(sortBy);
+  }
+
+  // 7️⃣ Pagination
+  const numericLimit = String(limit) === "all" ? 0 : Math.max(parseInt(limit, 10) || 20, 0);
+  const numericPage = Math.max(parseInt(page, 10) || 1, 1);
+  const skip = numericLimit > 0 ? (numericPage - 1) * numericLimit : 0;
+
+  if (numericLimit > 0) {
+    query = query.skip(skip).limit(numericLimit);
+  }
+
+  // 8️⃣ Execute query and count total
+  // Use lean() to reduce memory usage (returns plain JS objects instead of Mongoose documents)
+  const [bookings, total] = await Promise.all([
+    query.lean(), // Add lean() for memory efficiency
+    Booking.countDocuments(filter)
+  ]);
+
+
+  if (!bookings || bookings.length === 0) {
+    return next(new AppError("No bookings found", 404));
+  }
+
+  res.status(200).json({
+    status: "success",
+    results: bookings.length,
+    total,
+    page: numericLimit > 0 ? numericPage : 1,
+    pages: numericLimit > 0 ? Math.ceil(total / numericLimit) : 1,
+    data: bookings
+  });
+});
+
+
 exports.addBookingDriver = catchAsync( async (req, res, next) => {
   const { id: bookingId } = req.params;
   console.log(bookingId);
@@ -222,6 +513,7 @@ exports.addBookingDriver = catchAsync( async (req, res, next) => {
             name: fullName,
             user: req.user._id,
             isDefault: false,
+            driverType: "rental", // Rental driver added from booking details
             license: {
               fileUrl: licenseImage,
               verified: false,
@@ -254,7 +546,6 @@ exports.addBookingDriver = catchAsync( async (req, res, next) => {
     await session.abortTransaction();
     session.endSession();
 
-    console.log(err);
     next(err);
   }
 });
@@ -280,20 +571,50 @@ exports.cancelBooking = catchAsync( async (req, res, next) => {
     req.params.id,
     { status: "cancelled" },
     { new: true }
+  ).populate("acceptedDriver professionalDriver");
+  
+  // Update driver status back to "available" if booking had a driver
+  if (booking && (booking.acceptedDriver || booking.professionalDriver)) {
+    try {
+      const driverId = booking.acceptedDriver?._id || booking.professionalDriver?._id;
+      if (driverId) {
+        const driver = await Driver.findById(driverId);
+        if (driver && driver.driverType === "professional") {
+          driver.currentStatus = "available";
+          driver.lastActiveAt = new Date();
+          await driver.save({ validateBeforeSave: false });
+          console.log(`✅ Driver ${driverId} set back to available after booking cancellation`);
+        }
+      }
+    } catch (driverError) {
+      console.error("❌ Error updating driver status on booking cancellation:", driverError);
+    }
+  }
+  
+  // Log activity
+  await logActivityWithSocket(
+    req,
+    "Booking Cancelled",
+    {
+      bookingId: booking._id,
+      previousStatus: booking.status,
+    },
+    { userId: req.user._id, role: req.user.role }
   );
+
   res.json({ status: "success", data: booking });
 });
 
 exports.checkInBooking = catchAsync(
   async (req, res, next) => {
     const { id: bookingId } = req.params;
-  
+
     const {
       checkInTime = new Date(),
       mileage,
       fuelLevel,
       notes,
-      checkInImages,
+      checkinImages
     } = req.body;
 
     // Validate required parameters
@@ -365,7 +686,7 @@ exports.checkInBooking = catchAsync(
         )
       );
     }
-    console.log("Current Car Odometer:", booking.car, "Check-in Mileage:", mileage);
+    
     if(mileage < booking.car.currentOdometer){
 return next( new AppError("Odometer reading cannot be less than current car odometer", 400));
     }
@@ -388,7 +709,8 @@ return next( new AppError("Odometer reading cannot be less than current car odom
             notes: notes || "",
             checkedInBy: req.user?._id,
             checkedInAt: new Date(),
-            checkInImages,
+           checkInImages:checkinImages
+            
           },
           startMileage: mileage,
           $push: {
@@ -429,22 +751,7 @@ return next( new AppError("Odometer reading cannot be less than current car odom
         { session }
       );
 
-      // Create a rental session record
-      await RentalSession.create(
-        [
-          {
-            booking: bookingId,
-            car: booking.car._id,
-            user: booking.user._id,
-            startTime: new Date(checkInTime),
-            startOdometer: mileage,
-            startFuelLevel: fuelLevel,
-            status: "active",
-            pickupLocation: booking.pickupLocation,
-          },
-        ],
-        { session }
-      );
+     
 
       // Commit the transaction
       await session.commitTransaction();
@@ -655,20 +962,26 @@ exports.checkOutBooking = catchAsync(
         { session }
       );
 
-      // Update the rental session record
-      await RentalSession.findOneAndUpdate(
-        { booking: bookingId, status: "active" },
-        {
-          endTime: new Date(checkOutTime),
-          endOdometer: finalMileage,
-          endFuelLevel: fuelLevel,
-          status: "completed",
-          returnLocation: booking.returnLocation || booking.pickupLocation,
-          additionalCharges: totalAdditionalCharges,
-          notes: notes || "",
-        },
-        { session }
-      );
+      // Update driver status back to "available" if booking had a professional driver
+      if (booking.acceptedDriver || booking.professionalDriver) {
+        try {
+          const driverId = booking.acceptedDriver?._id || booking.professionalDriver?._id;
+          if (driverId) {
+            const driver = await Driver.findById(driverId);
+            if (driver && driver.driverType === "professional") {
+              driver.currentStatus = "available";
+              driver.lastActiveAt = new Date();
+              await driver.save({ validateBeforeSave: false, session });
+              console.log(`✅ Driver ${driverId} set back to available after booking completion`);
+            }
+          }
+        } catch (driverError) {
+          console.error("❌ Error updating driver status on booking completion:", driverError);
+          // Don't fail the checkout if driver update fails
+        }
+      }
+
+     
 
       // ✅ FIXED: UPDATE USER RENTAL STATS - Use direct update instead of save()
       const user = await User.findById(booking.user._id).session(session);
@@ -714,34 +1027,31 @@ exports.checkOutBooking = catchAsync(
         }
 
         // ✅ SEND RENTAL COMPLETION EMAIL (outside transaction)
-        try {
-         
-          // Send email after transaction is committed
-          setTimeout(async () => {
-            try {
-              const updatedUser = await User.findById(booking.user._id);
+        // Use setImmediate instead of setTimeout for better memory management
+        // This ensures the email is sent asynchronously without creating a timer that needs cleanup
+        setImmediate(async () => {
+          try {
+            const updatedUser = await User.findById(booking.user._id).lean();
 
-              await emailServices.sendRentalCompletion({
-                customerEmail: updatedUser .email,
-                customerName: updatedUser .fullName,
-                bookingId: updatedBooking._id,
-                vehicleModel: updatedBooking.car.model,
-                returnDate: new Date().toLocaleDateString(),
-                totalAmount: updatedBooking.totalCharges,
-                additionalCharges: totalAdditionalCharges,
-                rentalStats: {
-                  totalRentals: updatedTotalRentals,
-                  loyaltyTier: newTier,
-                  loyaltyPoints: (updatedUser .loyalty.points || 0) + 10
-                }
-              });
-            } catch (emailError) {
-              console.error('Failed to send rental completion email:', emailError);
-            }
-          }, 100);
-        } catch (emailError) {
-          console.error('Failed to schedule rental completion email:', emailError);
-        }
+            await emailServices.sendRentalCompletion({
+              customerEmail: updatedUser.email,
+              customerName: updatedUser.fullName,
+              bookingId: updatedBooking._id,
+              vehicleModel: updatedBooking.car.model,
+              returnDate: new Date().toLocaleDateString(),
+              totalAmount: updatedBooking.totalCharges,
+              additionalCharges: totalAdditionalCharges,
+              rentalStats: {
+                totalRentals: updatedTotalRentals,
+                loyaltyTier: newTier,
+                loyaltyPoints: (updatedUser.loyalty?.points || 0) + 10
+              }
+            });
+          } catch (emailError) {
+            console.error('Failed to send rental completion email:', emailError);
+            // Don't throw - email failures shouldn't break checkout
+          }
+        });
       }
 
       // Commit the transaction
@@ -870,6 +1180,7 @@ exports.UpdateBookingDriver = catchAsync(
                 name: name || `Driver ${Date.now()}`,
                 user: req.user._id,
                 isDefault: false,
+                driverType: "rental", // Rental driver added from booking details
                 license: {
                   fileUrl: licenseImage,
                   verified: false,
@@ -997,6 +1308,268 @@ exports.UpdateBookingDriver = catchAsync(
     }
   }
 );
+/**
+ * Accept driver request (first driver wins)
+ * POST /api/v1/bookings/:id/accept-driver
+ */
+exports.acceptDriverRequest = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
+  const userId = req.user._id; // Driver's user ID
+
+  // Get driver profile (check both unified Driver model and DriverProfile)
+  const DriverProfile = require("../models/driverProfileModel");
+  let driverProfile = null;
+  let driverId = null;
+
+  // First, try to find unified Driver model (for professional drivers created during signup)
+  const user = await User.findById(userId).select("driver").lean();
+  
+  if (user?.driver) {
+    const unifiedDriver = await Driver.findById(user.driver).lean();
+    if (unifiedDriver && unifiedDriver.driverType === "professional") {
+      driverProfile = unifiedDriver;
+      driverId = unifiedDriver._id.toString();
+    }
+  }
+
+  // If not found in unified Driver, check DriverProfile (legacy support)
+  if (!driverProfile) {
+    const profileDoc = await DriverProfile.findOne({ user: userId });
+    if (profileDoc) {
+      driverProfile = profileDoc;
+      driverId = profileDoc._id.toString();
+    }
+  }
+
+  if (!driverProfile || !driverId) {
+    return next(new AppError("Driver profile not found. Please complete driver registration.", 404));
+  }
+
+  const booking = await Booking.findById(id);
+  if (!booking) {
+    return next(new AppError("Booking not found", 404));
+  }
+
+  // Check if booking is still pending driver assignment
+  if (booking.driverRequestStatus !== "pending") {
+    return next(
+      new AppError(
+        booking.driverRequestStatus === "accepted"
+          ? "Driver already assigned to this booking"
+          : "This booking is no longer accepting driver requests",
+        400
+      )
+    );
+  }
+
+  // Check if request has expired (5 minutes)
+  if (booking.requestedAt) {
+    const requestAge = Date.now() - new Date(booking.requestedAt).getTime();
+    const EXPIRY_TIME = 5 * 60 * 1000; // 5 minutes
+
+    if (requestAge > EXPIRY_TIME) {
+      booking.driverRequestStatus = "expired";
+      await booking.save({ validateBeforeSave: false });
+
+      // Notify user that request expired
+      const io = req.app.get("io");
+      if (io) {
+        io.to(`user:${booking.user._id}`).emit("driver_request_expired", {
+          bookingId: booking._id,
+        });
+      }
+
+      return next(new AppError("Driver request has expired", 400));
+    }
+  }
+
+  // Use transaction to ensure only first driver wins
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      // Re-check status in transaction
+      const currentBooking = await Booking.findById(id).session(session);
+      if (currentBooking.driverRequestStatus !== "pending") {
+        throw new AppError("Another driver already accepted this request", 409);
+      }
+
+      // Calculate driver service fee: $35/hour
+      const HOURLY_RATE = 35;
+      
+      // Parse pickup and return times
+      let pickupTimeParsed = currentBooking.pickupTime || "10:00 AM";
+      let returnTimeParsed = currentBooking.returnTime || "10:00 AM";
+      
+      if (pickupTimeParsed.includes("AM") || pickupTimeParsed.includes("PM")) {
+        pickupTimeParsed = moment(pickupTimeParsed, "h:mm A").format("HH:mm");
+      }
+      if (returnTimeParsed.includes("AM") || returnTimeParsed.includes("PM")) {
+        returnTimeParsed = moment(returnTimeParsed, "h:mm A").format("HH:mm");
+      }
+      
+      const pickupDateTime = moment.tz(
+        `${moment(currentBooking.pickupDate).format("YYYY-MM-DD")} ${pickupTimeParsed}`,
+        "YYYY-MM-DD HH:mm",
+        "America/Chicago"
+      );
+      const returnDateTime = moment.tz(
+        `${moment(currentBooking.returnDate).format("YYYY-MM-DD")} ${returnTimeParsed}`,
+        "YYYY-MM-DD HH:mm",
+        "America/Chicago"
+      );
+      
+      const hours = Math.ceil((returnDateTime - pickupDateTime) / (1000 * 60 * 60));
+      const driverServiceFee = hours > 0 ? hours * HOURLY_RATE : 0;
+
+      // Assign driver ID (works for both Driver and DriverProfile models)
+      // Note: acceptedDriver field references DriverProfile, but we can store Driver ID as well
+      // The ID will work for lookups even if the model reference doesn't match exactly
+      currentBooking.acceptedDriver = driverId;
+      currentBooking.driverRequestStatus = "accepted";
+      currentBooking.driverAssigned = true;
+      currentBooking.driverServiceFee = driverServiceFee;
+      // Update total price to include driver service fee
+      currentBooking.totalPrice = (currentBooking.basePrice || 0) + (currentBooking.depositAmount || 150) + driverServiceFee;
+      currentBooking.status = "pending_payment";
+      
+      // Get driver name for status history
+      const driverName = driverProfile.fullName || driverProfile.name || driverProfile.user?.fullName || "Driver";
+      
+      currentBooking.statusHistory.push({
+        status: "pending_payment",
+        timestamp: new Date(),
+        changedBy: driverId,
+        notes: `Driver ${driverName} accepted booking request. Service fee: $${driverServiceFee.toFixed(2)} (${hours} hours @ $${HOURLY_RATE}/hour)`,
+      });
+
+      await currentBooking.save({ session });
+
+      // Update driver availability status to "on-trip"
+      try {
+        const driver = await Driver.findById(driverId);
+        if (driver && driver.driverType === "professional") {
+          driver.currentStatus = "on-trip";
+          driver.lastAcceptedBooking = currentBooking._id;
+          driver.lastActiveAt = new Date();
+          await driver.save({ validateBeforeSave: false });
+          console.log(`✅ Driver ${driverId} set to on-trip after accepting booking ${currentBooking._id}`);
+        }
+      } catch (driverUpdateError) {
+        console.error("❌ Error updating driver status on booking acceptance:", driverUpdateError);
+        // Don't fail the booking acceptance if driver update fails
+      }
+
+      // Emit events
+      const io = req.app.get("io");
+      if (io) {
+        // Notify user
+        const driverName = driverProfile.fullName || driverProfile.name || driverProfile.user?.fullName || "Driver";
+        io.to(`user:${booking.user._id}`).emit("driver_assigned", {
+          bookingId: booking._id,
+          driver: {
+            name: driverName,
+            id: driverId,
+          },
+        });
+
+        // Notify accepting driver
+        io.to(`driver:${driverId}`).emit("driver:accepted", {
+          bookingId: booking._id,
+          message: "Booking request accepted successfully",
+        });
+
+        // Notify other drivers that request was taken
+        io.to("drivers").emit("driver:closed", {
+          bookingId: booking._id,
+          reason: "accepted_by_another",
+        });
+      }
+    });
+
+    // Refresh booking data
+    await booking.populate([
+      { path: "user", select: "fullName email phone" },
+      { path: "car", select: "model series images" },
+      { 
+        path: "acceptedDriver",
+        select: "status rating",
+        populate: {
+          path: "user",
+          select: "fullName email phone"
+        }
+      },
+    ]);
+
+    res.status(200).json({
+      status: "success",
+      message: "Driver request accepted successfully",
+      data: {
+        booking: booking.toObject({ getters: true }),
+      },
+    });
+  } catch (error) {
+    if (error instanceof AppError) {
+      return next(error);
+    }
+    return next(new AppError("Failed to accept driver request", 500));
+  } finally {
+    session.endSession();
+  }
+});
+
+/**
+ * Get booking reminders
+ * GET /api/v1/bookings/reminders
+ */
+exports.getBookingReminders = catchAsync(async (req, res, next) => {
+  const userId = req.user._id;
+
+  // Get user settings to check if reminders are enabled
+  const User = require("../models/userModel");
+  const user = await User.findById(userId).select("settings");
+
+  if (!user?.settings?.bookingReminders) {
+    return res.status(200).json({
+      status: "success",
+      data: {
+        reminders: [],
+        message: "Booking reminders are disabled",
+      },
+    });
+  }
+
+  // Get upcoming bookings (within next 7 days)
+  const now = new Date();
+  const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+  const upcomingBookings = await Booking.find({
+    user: userId,
+    pickupDate: { $gte: now, $lte: sevenDaysFromNow },
+    status: { $in: ["confirmed", "pending_payment"] },
+  })
+    .populate("car", "model series images")
+    .select("pickupDate returnDate pickupTime pickupLocation car status")
+    .sort({ pickupDate: 1 });
+
+  const reminders = upcomingBookings.map((booking) => ({
+    bookingId: booking._id,
+    car: booking.car,
+    pickupDate: booking.pickupDate,
+    pickupTime: booking.pickupTime,
+    pickupLocation: booking.pickupLocation,
+    daysUntil: Math.ceil(
+      (booking.pickupDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+    ),
+  }));
+
+  res.status(200).json({
+    status: "success",
+    data: {
+      reminders,
+    },
+  });
+});
+
 exports.getCarBooking = catchAsync( async (req, res, next) => {
   const bookings = await Booking.find({
     car: req.params.id,

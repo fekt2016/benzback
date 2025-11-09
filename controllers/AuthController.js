@@ -1,5 +1,5 @@
-const { validateUSPhone } = require("../utils/helper");
-const {catchAsync, catchAsyncWithMemory } = require("../utils/catchAsync");
+    const { validateUSPhone } = require("../utils/helper");
+const {catchAsync } = require("../utils/catchAsync");
 const { generateOTP } = require("../utils/OtpSystem");
 const crypto = require("crypto");
 const User = require("../models/userModel");
@@ -12,10 +12,28 @@ const TokenBlacklist = require("../models/TokenBlacklistModel");
 const { addToTokenBlacklist, isTokenBlacklisted } = require("../services/tokenBlacklistService");
 const { generatePasswordResetData } = require("../services/helper");
 const Preference = require("../models/preferenceModel");
+const Driver = require("../models/driverModel");
+const { logActivityWithSocket } = require("../utils/activityLogger");
 
+/**
+ * Signup Controller
+ * 
+ * Flow:
+ * 1. Validates phone (US format), password, age (18+), email
+ * 2. Creates User record with OTP for verification
+ * 3. If role === "driver": Automatically creates Driver record with driverType: "professional"
+ *    - Links bidirectionally: user.driver = driver._id and driver.user = user._id
+ *    - Driver starts with status: "pending" and verified: false
+ *    - Driver creation failure doesn't block signup (logged only)
+ * 4. Sends OTP email for verification
+ * 
+ * Result:
+ * - Customers (role: "user") → User only
+ * - Drivers (role: "driver") → User + Driver (driverType: "professional"), both linked
+ */
 exports.signup = catchAsync(async (req, res, next) => {
   try {
-    const { timeZone,dateOfBirth,fullName, phone, password, passwordConfirm, email } = req.body;
+    const { timeZone, dateOfBirth, fullName, phone, password, passwordConfirm, email, role } = req.body;
 
     let currentPhone = phone.replace(/\D/g, "");
 
@@ -35,9 +53,16 @@ exports.signup = catchAsync(async (req, res, next) => {
         )
       );
     }
-if(dateOfBirth<18){
+
+    // Age check: must be at least 18 years old
+    if (dateOfBirth) {
+      const ageDiff = Date.now() - new Date(dateOfBirth).getTime();
+      const age = new Date(ageDiff).getUTCFullYear() - 1970;
+      if (age < 18) {
   return next(new AppError("You must be at least 18 years old to sign up", 400));
 }
+    }
+
     if (password !== passwordConfirm) {
       return next(new AppError("Passwords do not match", 400));
     }
@@ -56,6 +81,10 @@ if(dateOfBirth<18){
       );
     }
 
+    // Validate role if provided
+    const validRoles = ["user", "driver"];
+    const userRole = role && validRoles.includes(role) ? role : "user";
+
     const otp = generateOTP();
     const otpExpires = Date.now() + 10 * 60 * 1000; // Fixed: 10 minutes
     const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
@@ -69,6 +98,7 @@ if(dateOfBirth<18){
       phone: currentPhone.replace(/\D/g, ""),
       password,
       passwordConfirm,
+      role: userRole, // Set the selected role
       otp: hashedOtp,
       otpExpires,
       phoneVerified: false,
@@ -76,9 +106,45 @@ if(dateOfBirth<18){
     });
     const preferences = await Preference.create({ user: newUser._id });
     newUser.preferences = preferences._id;
-     await newUser.save();
+    await newUser.save();
 
-try {
+    /**
+     * Driver Account Creation
+     * When a user signs up with role: "driver", create a Driver record with driverType: "professional"
+     * This links the user account to a professional driver profile that can be used for:
+     * - Document verification (license, insurance)
+     * - Driver management in admin panel
+     * - Future integration with ride acceptance system
+     */
+    if (userRole === "driver") {
+      try {
+        // Create Driver record with professional driver type
+        const driver = await Driver.create({
+          user: newUser._id,
+          fullName: newUser.fullName,
+          phone: newUser.phone,
+          email: newUser.email,
+          dateOfBirth: newUser.dateOfBirth,
+          driverType: "professional", // Professional driver (chauffeur) registered from signup
+          verified: false,
+          status: "pending",
+          // License and insurance files are optional during signup
+          // Driver will upload documents later via dashboard for verification
+        });
+
+        // Bidirectional linking: user.driver = driver._id and driver.user = newUser._id (already set)
+        newUser.driver = driver._id;
+        await newUser.save();
+
+        console.log(`[Signup] Professional driver created for user ${newUser._id}`);
+      } catch (err) {
+        console.error("[Signup] Failed to create professional driver:", err);
+        // Don't fail signup if driver creation fails, just log it
+        // Driver can create profile later via /driver/register endpoint if needed
+      }
+    }
+
+    try {
       await emailServices.sendSignupOTP({
         email: newUser.email,
         name: newUser.fullName,
@@ -102,7 +168,7 @@ try {
     res.status(200).json({
       status: "success",
       message: "Account created! Please verify with the OTP sent to your phone",
-      data: { user: userResponse, otp },
+      data: { user: userResponse },
     });
   } catch (error) {
     next(error);
@@ -149,7 +215,38 @@ exports.verifyOtp = catchAsync( async (req, res, next) => {
 
     await user.save({ validateBeforeSave: false });
 
+    // Update driver availability if user is a driver
+    if (user.driver) {
+      try {
+        const Driver = require("../models/driverModel");
+        const driver = await Driver.findById(user.driver);
+        if (driver && driver.driverType === "professional") {
+          driver.isOnline = true;
+          driver.currentStatus = "available";
+          driver.lastActiveAt = new Date();
+          await driver.save({ validateBeforeSave: false });
+          console.log(`✅ Driver ${user.driver} set to online and available on login`);
+        }
+      } catch (driverError) {
+        console.error("❌ Error updating driver status on login:", driverError);
+      }
+    }
+
     createSendToken(user, message, 200, res);
+
+    // Log activity
+    await logActivityWithSocket(
+      req,
+      user.status === "pending" ? "User Signed Up" : "User Logged In",
+      {
+        verificationContext,
+        phoneVerified: user.phoneVerified,
+      },
+      {
+        userId: user._id,
+        role: user.role,
+      }
+    );
   } catch (error) {
     next(error);
   }
@@ -252,11 +349,19 @@ exports.protect = catchAsync( async (req, res, next) => {
       );
     }
 
+    // Ensure role defaults to "user" if not set (for backwards compatibility)
+    const userRole = currentUser.role || "user";
+    
+    // If role is missing in DB, update it (for existing users)
+    if (!currentUser.role) {
+      await User.findByIdAndUpdate(decoded.id, { role: "user" }, { new: false });
+    }
+
     // Attach minimal user data to request
     req.user = {
       _id: currentUser._id,
       email: currentUser.email,
-      role: currentUser.role,
+      role: userRole,
       fullName: currentUser.fullName,
     };
 
@@ -268,11 +373,30 @@ exports.protect = catchAsync( async (req, res, next) => {
 
 exports.restrictTo = (...roles) => {
   return (req, res, next) => {
-    if (!req.user?.role || !roles.includes(req.user.role)) {
+    // Debug logging to help diagnose permission issues
+    if (!req.user?.role) {
+      console.error('[AUTH] User role is missing:', {
+        userId: req.user?._id,
+        userEmail: req.user?.email,
+        expectedRoles: roles,
+      });
       return next(
         new AppError("You do not have permission to perform this action", 403)
       );
     }
+    
+    if (!roles.includes(req.user.role)) {
+      console.error('[AUTH] User role does not match required roles:', {
+        userId: req.user._id,
+        userEmail: req.user.email,
+        userRole: req.user.role,
+        expectedRoles: roles,
+      });
+      return next(
+        new AppError("You do not have permission to perform this action", 403)
+      );
+    }
+    
     next();
   };
 };
@@ -289,9 +413,23 @@ exports.getMe = catchAsync(async (req, res, next) => {
       return next(new AppError("User not found", 404));
     }
 
+    // Ensure executive field is explicitly included
+    // If it's missing, set it to false, but also log it
+    const executiveValue = user.executive !== undefined && user.executive !== null 
+      ? user.executive 
+      : false;
+    
+    // Explicitly set the executive field to ensure it's in the response
+    user.executive = executiveValue;
+
     res.status(200).json({
       status: "success",
-      data: { user },
+      data: { 
+        user: {
+          ...user,
+          executive: executiveValue, // Explicitly include executive field
+        }
+      },
     });
   } catch (error) {
     next(error);
@@ -365,6 +503,47 @@ exports.logout = catchAsync(async (req, res, next) => {
               ipAddress: req.ip,
               userAgent: req.get("User-Agent")
             });
+          }
+        }
+        
+        // Update driver status to offline and set lastAvailable when driver logs out
+        if (user.driver) {
+          try {
+            const Driver = require("../models/driverModel");
+            const DriverProfile = require("../models/driverProfileModel");
+            
+            // Try unified Driver model first
+            const driver = await Driver.findById(user.driver).lean();
+            if (driver && driver.driverType === "professional") {
+              // Set status to "pending" (which maps to "offline" in frontend)
+              // Update availability tracking fields
+              await Driver.findByIdAndUpdate(
+                user.driver,
+                { 
+                  status: "pending",
+                  isOnline: false,
+                  currentStatus: "offline",
+                  lastAvailable: new Date(), // Set to current time when logging out
+                  lastActiveAt: new Date() // Track last activity
+                },
+                { new: true }
+              );
+              console.log(`✅ Driver ${user.driver} set to offline and availability updated on logout`);
+            } else {
+              // Fallback to DriverProfile for legacy
+              await DriverProfile.findOneAndUpdate(
+                { user: user._id },
+                { 
+                  status: "offline",
+                  lastActive: new Date() // Set to current time when logging out
+                },
+                { new: true }
+              );
+              console.log(`✅ DriverProfile status set to offline and lastActive updated on logout`);
+            }
+          } catch (driverError) {
+            // Log error but don't fail logout
+            console.error("❌ Error updating driver status on logout:", driverError);
           }
         }
         

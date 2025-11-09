@@ -7,11 +7,11 @@ const router = express.Router();
 router.use(authController.protect);
 router
   .route("/")
-  .post(authController.restrictTo("user"), reviewController.createReview);
+  .post(authController.restrictTo("user", "admin"), reviewController.createReview);
 
 router.get(
   "/car/:carId",
-  authController.restrictTo("user"),
+  authController.restrictTo("user", "admin"),
   reviewController.getCarReviews
 );
 

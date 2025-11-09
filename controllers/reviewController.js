@@ -2,7 +2,7 @@ const Review = require("../models/reviewModel");
 const {catchAsync} = require("../utils/catchAsync");
 const Booking = require("../models/bookingModel");
 const AppError = require("../utils/appError");
-const Car = require("../models/carModel");
+// const Car = require("../models/carModel");
 
 exports.createReview = catchAsync( async (req, res, next) => {
   const { bookingId, rating, comment } = req.body; // Removed title since we removed it from the frontend
@@ -50,30 +50,6 @@ exports.createReview = catchAsync( async (req, res, next) => {
   });
 });
 
-// const updateCarRating = catchAsync(async (req, res, next) => {
-//   const reviews = await Review.find({
-//     car: carId,
-//     status: "active",
-//   });
-
-//   if (reviews.length > 0) {
-//     const totalRating = reviews.reduce((sum, review) => sum + review.rating, 0);
-//     const averageRating = totalRating / reviews.length;
-//     const ratingCount = reviews.length;
-
-//     // Update the car
-//     await Car.findByIdAndUpdate(carId, {
-//       averageRating: Math.round(averageRating * 10) / 10, // Round to 1 decimal
-//       ratingCount,
-//     });
-//   } else {
-//     // No reviews left, reset to defaults
-//     await Car.findByIdAndUpdate(carId, {
-//       averageRating: 0,
-//       ratingCount: 0,
-//     });
-//   }
-// });
 
 exports.getCarReviews = catchAsync(
   

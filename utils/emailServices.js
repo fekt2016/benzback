@@ -1,6 +1,13 @@
 // utils/emailService.js
 const sgMail = require("@sendgrid/mail");
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+
+// Verify SendGrid API key is configured
+if (!process.env.SENDGRID_API_KEY) {
+  console.error("❌ SENDGRID_API_KEY is not set in environment variables!");
+} else {
+  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+  console.log("✅ SendGrid API key configured");
+}
 
 class EmailService {
   constructor() {
@@ -39,9 +46,23 @@ class EmailService {
     dynamicTemplateData,
   }) {
     try {
+      // Format from address properly for SendGrid
+      let formattedFrom;
+      if (typeof from === "string") {
+        formattedFrom = from;
+      } else if (from && typeof from === "object" && from.email) {
+        // SendGrid accepts object format: { email, name }
+        formattedFrom = {
+          email: from.email,
+          name: from.name || "BenzFlex"
+        };
+      } else {
+        throw new Error("Invalid from address format");
+      }
+
       const msg = {
         to,
-        from: typeof from === "string" ? from : from,
+        from: formattedFrom,
         subject,
         text,
         html,
@@ -54,11 +75,20 @@ class EmailService {
         (key) => msg[key] === undefined && delete msg[key]
       );
 
+      console.log(`📧 Attempting to send email to ${to} from ${typeof formattedFrom === 'string' ? formattedFrom : formattedFrom.email}: ${subject}`);
+      
       const result = await sgMail.send(msg);
-      console.log(`Email sent to ${to} from ${msg.from.email}: ${subject}`);
+      console.log(`✅ Email sent successfully to ${to} from ${typeof formattedFrom === 'string' ? formattedFrom : formattedFrom.email}: ${subject}`);
       return { success: true, messageId: result[0]?.headers["x-message-id"] };
     } catch (error) {
-      console.error("Email sending failed:", error);
+      console.error("❌ Email sending failed:", error);
+      console.error("Error details:", {
+        to,
+        from,
+        subject,
+        errorMessage: error.message,
+        errorResponse: error.response?.body
+      });
       throw new Error(`Failed to send email: ${error.message}`);
     }
   }
@@ -76,7 +106,18 @@ class EmailService {
       bookingLink,
     } = bookingData;
 
-    const subject = `Booking Confirmed - Your ${vehicleModel} Awaits!`;
+    // Validate required fields
+    if (!customerEmail) {
+      throw new Error("customerEmail is required for booking confirmation");
+    }
+    if (!customerName) {
+      throw new Error("customerName is required for booking confirmation");
+    }
+    if (!orderId) {
+      throw new Error("orderId is required for booking confirmation");
+    }
+
+    const subject = `Booking Confirmed - Your ${vehicleModel || 'Luxury Vehicle'} Awaits!`;
 
     const html = `
       <!DOCTYPE html>
@@ -1419,7 +1460,7 @@ async sendPasswordResetSuccess(confirmationData) {
           ` : ''}
 
           <div style="text-align: center;">
-            <a href="${process.env.FRONTEND_URL}/profile" class="cta-button">
+            <a href="${require("../services/helper").getFrontendUrl()}/profile" class="cta-button">
               View Updated Profile
             </a>
           </div>

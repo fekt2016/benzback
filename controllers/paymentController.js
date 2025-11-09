@@ -1,239 +1,249 @@
-const {catchAsync }= require("../utils/catchAsync");
+const { catchAsync } = require("../utils/catchAsync");
 const Booking = require("../models/bookingModel");
-const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const AppError = require("../utils/appError");
+const { getFrontendUrl } = require("../utils/helper");
 
-// Cache stripe configuration to avoid recreating objects
+// Initialize Stripe safely
+let stripe = null;
+if (!process.env.STRIPE_SECRET_KEY) {
+  console.error("[PaymentController] ❌ Missing STRIPE_SECRET_KEY in .env");
+} else {
+  stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+  const keyType = process.env.STRIPE_SECRET_KEY.startsWith("sk_live") ? "LIVE" : "TEST";
+  console.log(`[PaymentController] ✅ Stripe initialized (${keyType} mode)`);
+}
+
+// Cached Stripe config
 const STRIPE_CONFIG = {
   payment_method_types: ["card"],
   mode: "payment",
-  customer_creation: "if_required",
   allow_promotion_codes: true,
+  customer_creation: "if_required",
 };
 
-// Clean up function to remove circular references and large objects
+/** 🔹 Helper: clean booking object before sending response */
 function cleanupBookingData(booking) {
   if (!booking) return null;
-
-  // Return only necessary fields for response
   return {
     _id: booking._id,
     status: booking.status,
     paymentStatus: booking.paymentStatus,
     totalPrice: booking.totalPrice,
+    pickupDate: booking.pickupDate,
+    returnDate: booking.returnDate,
+    rentalDays: booking.rentalDays,
+    basePrice: booking.basePrice,
+    depositAmount: booking.depositAmount,
     user: booking.user
       ? {
           email: booking.user.email,
           fullName: booking.user.fullName,
+          phone: booking.user.phone,
         }
       : null,
     car: booking.car
       ? {
           model: booking.car.model,
+          make: booking.car.make,
+          year: booking.car.year,
+          images: booking.car.images || [],
+          seats: booking.car.seats,
         }
       : null,
   };
 }
 
-exports.createStripePayment = catchAsync(
+/** 🔹 Create Stripe Checkout Session */
+exports.createStripePayment = catchAsync(async (req, res, next) => {
+  const { metadata, line_items, customer_email, mobile = false } = req.body;
 
-  async (req, res, next) => {
-    const {
-      metadata,
-      line_items,
-      mode,
-      success_url,
-      cancel_url,
-      customer_email,
-    } = req.body;
+  if (!metadata?.booking_id)
+    return next(new AppError("Booking ID is required", 400));
+  if (!Array.isArray(line_items) || line_items.length === 0)
+    return next(new AppError("Line items are required", 400));
+  if (!stripe) return next(new AppError("Stripe not configured", 500));
 
-    // Early validation with minimal memory usage
-    if (!metadata || !metadata.booking_id) {
-      return next(new AppError("Booking ID is required", 400));
-    }
+  const bookingId = metadata.booking_id;
+  const booking = await Booking.findById(bookingId)
+    .populate("car", "model images seats")
+    .populate("user", "email fullName phone")
+    .select("status paymentStatus totalPrice pickupDate returnDate basePrice depositAmount rentalDays")
+    .lean();
 
-    if (!line_items || !Array.isArray(line_items) || line_items.length === 0) {
-      return next(new AppError("Line items are required", 400));
-    }
+  if (!booking) return next(new AppError("Booking not found", 404));
+  if (booking.paymentStatus === "paid")
+    return next(new AppError("Booking already paid", 400));
 
-    const bookingId = metadata.booking_id;
-    let booking = null;
-    let session = null;
+  // ✅ Get frontend URL dynamically (env-safe)
+  const FRONTEND_URL = getFrontendUrl();
 
-    try {
-      // Use lean() and select only necessary fields to reduce memory
-      booking = await Booking.findById(bookingId)
-        .populate("car", "model")
-        .populate("user", "email fullName")
-        .select("status paymentStatus totalPrice pickupDate returnDate")
-        .lean();
+  let successUrl = `${FRONTEND_URL}/confirmation?booking_id=${bookingId}&session_id={CHECKOUT_SESSION_ID}`;
+  let cancelUrl = `${FRONTEND_URL}/checkout?booking_id=${bookingId}`;
 
-      if (!booking) {
-        return next(new AppError("Booking not found", 404));
-      }
-
-      if (booking.paymentStatus === "paid") {
-        return next(new AppError("This booking has already been paid", 400));
-      }
-
-      // Create Stripe session with minimal data
-      const sessionData = {
-        ...STRIPE_CONFIG,
-        line_items,
-        mode: mode || STRIPE_CONFIG.mode,
-        success_url:
-          success_url ||
-          `${process.env.FRONTEND_URL}/booking/success?session_id={CHECKOUT_SESSION_ID}&booking_id=${bookingId}`,
-        cancel_url:
-          cancel_url ||
-          `${process.env.FRONTEND_URL}/booking/cancel?booking_id=${bookingId}`,
-        customer_email: customer_email || booking.user.email,
-        metadata: {
-          booking_id: bookingId,
-          car_model: booking.car?.model || "Unknown",
-        },
-      };
-
-      session = await stripe.checkout.sessions.create(sessionData);
-
-      // Update only necessary fields
-      await Booking.updateOne(
-        { _id: bookingId },
-        {
-          stripeSessionId: session.id,
-          paymentStatus: "pending",
-          $unset: {
-            // Remove any unused fields that might accumulate
-            temporaryData: 1,
-            debugInfo: 1,
-          },
-        }
-      );
-
-    
-
-      // Clean up response data
-      const cleanBooking = cleanupBookingData(booking);
-
-      res.status(200).json({
-        success: true,
-        sessionId: session.id,
-        data: cleanBooking,
-        message: "Payment session created successfully",
-        // Include memory info in development
-      });
-    } catch (error) {
-      console.error("Stripe session creation error:", error);
-
-      // Clean up any references to allow garbage collection
-      booking = null;
-      session = null;
-
-      if (error.type?.includes("StripeInvalidRequest")) {
-        return next(
-          new AppError(
-            "Invalid payment request. Please check your payment details.",
-            400
-          )
-        );
-      }
-
-      if (error.type?.includes("StripeConnection")) {
-        return next(
-          new AppError(
-            "Payment service temporarily unavailable. Please try again.",
-            503
-          )
-        );
-      }
-
-      res.status(500).json({
-        success: false,
-        error: "Failed to create checkout session",
-        message: error.message,
-      });
-    }
+  if (mobile) {
+    successUrl += "&mobile=true";
+    cancelUrl += "&mobile=true";
   }
-);
 
-exports.getBookingConfirmation = catchAsync(
- 
-  async (req, res, next) => {
-    const { bookingId } = req.params;
+  console.log("[PaymentController] ✅ Stripe redirect URLs:", {
+    env: process.env.NODE_ENV,
+    mobile,
+    successUrl,
+    cancelUrl,
+  });
 
-    // Use lean and select only necessary fields
-    const booking = await Booking.findById(bookingId)
-      .populate("user", "email fullName")
-      .populate("car", "model make year")
-      .select(
-        "status paymentStatus stripeSessionId pickupDate returnDate totalPrice"
-      )
-      .lean();
+  // ✅ Create Stripe checkout session
+  const session = await stripe.checkout.sessions.create({
+    ...STRIPE_CONFIG,
+    line_items,
+    success_url: successUrl,
+    cancel_url: cancelUrl,
+    customer_email: customer_email || booking.user?.email,
+    metadata: {
+      booking_id: bookingId.toString(),
+      car_model: booking.car?.model || "Unknown",
+      mobile_flow: mobile ? "true" : "false",
+    },
+  });
 
-    if (!booking) {
-      return next(new AppError("Booking not found", 404));
-    }
+  // Update booking state
+  await Booking.updateOne(
+    { _id: bookingId },
+    { stripeSessionId: session.id, paymentStatus: "pending" }
+  );
 
-    let session = null;
-    let paymentStatus = booking.paymentStatus || "unpaid";
+  // Allow cross-origin (for web + mobile)
+  const origin = req.headers.origin;
+  if (origin) {
+    res.header("Access-Control-Allow-Origin", origin);
+    res.header("Access-Control-Allow-Credentials", "true");
+  }
 
-    try {
-      // Only check Stripe if we have a session and payment isn't confirmed
-      if (booking.stripeSessionId && booking.paymentStatus !== "paid") {
-        session = await stripe.checkout.sessions.retrieve(
-          booking.stripeSessionId
+  res.status(200).json({
+    success: true,
+    sessionId: session.id,
+    url: session.url,
+    data: cleanupBookingData(booking),
+    message: "Stripe session created successfully",
+  });
+});
+
+/** 🔹 Booking Confirmation (post-payment verification) */
+exports.getBookingConfirmation = catchAsync(async (req, res, next) => {
+  const { bookingId } = req.params;
+  if (!bookingId) return next(new AppError("Booking ID is required", 400));
+
+  const booking = await Booking.findById(bookingId)
+    .populate("user", "email fullName phone")
+    .populate("car", "model make year images seats")
+    .select(
+      "status stripeSessionId paymentStatus totalPrice pickupDate returnDate basePrice depositAmount rentalDays"
+    )
+    .lean();
+
+  if (!booking) return next(new AppError("Booking not found", 404));
+
+  let session = null;
+  let paymentStatus = booking.paymentStatus || "unpaid";
+
+  try {
+    // Retrieve session if not yet marked paid
+    let paymentJustConfirmed = false;
+    if (booking.stripeSessionId && booking.paymentStatus !== "paid") {
+      session = await stripe.checkout.sessions.retrieve(booking.stripeSessionId);
+      if (session.payment_status === "paid") {
+        paymentStatus = "paid";
+        paymentJustConfirmed = true;
+        
+        // Get full booking data to check for driver request
+        const fullBooking = await Booking.findById(bookingId)
+          .populate("car", "model series images")
+          .select("requestDriver driverRequestStatus pickupDate returnDate pickupLocation totalPrice requestedAt")
+          .lean();
+        
+        const updateResult = await Booking.updateOne(
+          { _id: bookingId },
+          {
+            status: "confirmed",
+            paymentStatus: "paid",
+            paidAt: new Date(),
+          }
         );
-
-        if (session.payment_status === "paid") {
-          paymentStatus = "paid";
-
-          // Update booking status
-          await Booking.updateOne(
-            { _id: bookingId },
-            {
-              status: "confirmed",
-              paymentStatus: "paid",
-              paidAt: new Date(),
-            }
-          );
-
-          // Update local booking object for response
+        
+        // Verify payment was successfully updated
+        if (updateResult.modifiedCount === 0) {
+          console.log(`[Payment] Booking ${bookingId} payment status was already set to paid. Skipping driver request.`);
+        } else {
           booking.status = "confirmed";
           booking.paymentStatus = "paid";
           booking.paidAt = new Date();
+          
+          // Double-check: Verify payment status is now "paid" before sending driver request
+          const verifiedBooking = await Booking.findById(bookingId)
+            .select("paymentStatus requestDriver driverRequestStatus")
+            .lean();
+          
+          if (verifiedBooking?.paymentStatus !== "paid") {
+            console.warn(`[Payment] Booking ${bookingId} payment status is not "paid" (${verifiedBooking?.paymentStatus}). Skipping driver request.`);
+          } else if (fullBooking?.requestDriver && fullBooking?.driverRequestStatus === "pending") {
+            // 🔔 If requestDriver and payment is confirmed, emit socket event to all available drivers
+            // CRITICAL: Only send driver request AFTER payment is confirmed (paymentStatus = "paid")
+            // This ensures drivers only receive requests for paid bookings
+            try {
+              const io = req.app.get("io");
+              if (io) {
+                io.to("drivers").emit("driver_request", {
+                  bookingId: bookingId,
+                  car: {
+                    model: fullBooking.car?.model,
+                    series: fullBooking.car?.series,
+                    images: fullBooking.car?.images?.[0],
+                  },
+                  pickupDate: fullBooking.pickupDate,
+                  returnDate: fullBooking.returnDate,
+                  pickupLocation: fullBooking.pickupLocation,
+                  totalPrice: fullBooking.totalPrice,
+                  requestedAt: fullBooking.requestedAt || new Date(),
+                });
+                console.log(`[Payment] Driver request emitted for paid booking: ${bookingId}`);
+              }
+            } catch (socketError) {
+              console.error("[Payment] Error emitting driver_request:", socketError);
+              // Don't fail payment verification if socket fails
+            }
+          }
         }
       }
-
-      // Clean up response data
-      const responseData = {
-        booking: cleanupBookingData(booking),
-        paymentStatus,
-        // Only include minimal session data
-        session: session
-          ? {
-              id: session.id,
-              payment_status: session.payment_status,
-              amount_total: session.amount_total,
-            }
-          : null,
-      };
-
-      res.status(200).json({
-        success: true,
-        data: responseData,
-      });
-    } catch (error) {
-      console.error("Payment verification error:", error);
-
-      // Still return booking data even if Stripe fails
-      res.status(200).json({
-        success: true,
-        data: {
-          booking: cleanupBookingData(booking),
-          paymentStatus: booking.paymentStatus,
-          error: "Unable to verify payment status with payment provider",
-        },
-      });
     }
+
+    const responseData = {
+      booking: cleanupBookingData(booking),
+      paymentStatus,
+      session: session
+        ? {
+            id: session.id,
+            payment_status: session.payment_status,
+            amount_total: session.amount_total,
+          }
+        : null,
+    };
+
+    const origin = req.headers.origin;
+    if (origin) {
+      res.header("Access-Control-Allow-Origin", origin);
+      res.header("Access-Control-Allow-Credentials", "true");
+    }
+
+    res.status(200).json({ success: true, data: responseData });
+  } catch (error) {
+    console.error("[getBookingConfirmation] Stripe verification failed:", error);
+    res.status(200).json({
+      success: true,
+      data: {
+        booking: cleanupBookingData(booking),
+        paymentStatus: booking.paymentStatus,
+        error: "Unable to verify payment with Stripe",
+      },
+    });
   }
-);
+});
