@@ -33,7 +33,7 @@ const fs = require("fs");
 const path = require("path");
 
 // Test file name for disk space check
-const TEST_FILE_NAME = ".github_disk_check.tmp";
+const TEST_FILE_NAME = "disk_test.txt";
 const TEST_FILE_SIZE = 1024; // 1KB test file
 
 // ANSI color codes for better log output
@@ -112,7 +112,7 @@ async function cleanupTempFiles(client, baseDir) {
               const filePath = path.posix.join(remotePath, file.name).replace(/\\/g, "/");
               try {
                 await client.remove(filePath);
-                log(`  🗑️  Deleted: ${filePath}`, "green");
+                log(`🧹 Deleted ${filePath}`, "green");
                 deletedCount++;
                 freedSpace += file.size || 0;
               } catch (error) {
@@ -141,7 +141,7 @@ async function cleanupTempFiles(client, baseDir) {
             const filePath = path.posix.join(baseDir, file.name).replace(/\\/g, "/");
             try {
               await client.remove(filePath);
-              log(`  🗑️  Deleted: ${filePath}`, "green");
+              log(`🧹 Deleted ${filePath}`, "green");
               deletedCount++;
               freedSpace += file.size || 0;
             } catch (error) {
@@ -245,7 +245,7 @@ async function checkDiskSpace() {
       
       try {
         await client.uploadFrom(testFile, TEST_FILE_NAME);
-        log(`✅ Test file uploaded successfully (attempt ${attemptCount})`, "green");
+        log(`✅ Enough disk space`, "green");
         uploadSuccess = true;
         
         // Clean up test file
@@ -261,7 +261,7 @@ async function checkDiskSpace() {
         
         // Check if it's a disk full error (552)
         if (errorCode === "552" || errorMessage.includes("552") || errorMessage.includes("Disk full") || errorMessage.includes("No space")) {
-          log(`❌ Disk full error detected (attempt ${attemptCount})`, "red");
+          log(`❌ Disk full on server`, "red");
           log(`   Error: ${errorMessage}`, "red");
           
           if (attemptCount < maxAttempts) {
