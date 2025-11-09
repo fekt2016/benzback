@@ -136,6 +136,7 @@ jobs:
       # Step 8: Clean Old Files on FTP Server
       # ========================================
       - name: 🧽 Clean old files on FTP (pre-deployment)
+        id: cleanup-old-files
         working-directory: backend
         continue-on-error: true
         run: |
