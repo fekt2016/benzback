@@ -27,6 +27,8 @@ jobs:
       # ========================================
       - name: 📦 Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       # ========================================
       # 2️⃣ Setup Node.js
@@ -37,50 +39,20 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
 
       # ========================================
-      # 3️⃣ Debug FTP Secrets (Show Real Values)
-      # ========================================
-      - name: 🔍 Debug FTP Secrets (Show Real Values)
-        env:
-          FTP_SERVER: ${{ secrets.FTP_SERVER }}
-          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
-          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-        run: |
-          echo "=========================================="
-          echo "🔍 FTP SECRETS - REAL VALUES (for debugging)"
-          echo "=========================================="
-          echo ""
-          echo "📡 FTP_SERVER (real value):"
-          echo "   $FTP_SERVER"
-          echo ""
-          echo "👤 FTP_USERNAME (real value):"
-          echo "   $FTP_USERNAME"
-          echo ""
-          echo "🔑 FTP_PASSWORD (real value):"
-          echo "   $FTP_PASSWORD"
-          echo ""
-          echo "📂 FTP_DIR (from env):"
-          echo "   ${{ env.FTP_DIR }}"
-          echo ""
-          echo "🔌 FTP_PORT (from env):"
-          echo "   ${{ env.FTP_PORT }}"
-          echo ""
-          echo "=========================================="
-          echo "✅ These are the ACTUAL values that will be used for FTP deployment"
-          echo "=========================================="
-
-      # ========================================
-      # 4️⃣ Verify FTP Secrets
+      # 3️⃣ Verify FTP Secrets
       # ========================================
       - name: 🔐 Verify FTP Secrets
         run: |
           set -e
-          echo "Verifying FTP secrets..."
+          echo "=========================================="
+          echo "🔐 Verifying FTP Secrets"
+          echo "=========================================="
 
-          if [ -z "${{ secrets.FTP_SERVER }}" ]; then echo "::error::Missing FTP_SERVER"; exit 1; fi
-          if [ -z "${{ secrets.FTP_USERNAME }}" ]; then echo "::error::Missing FTP_USERNAME"; exit 1; fi
-          if [ -z "${{ secrets.FTP_PASSWORD }}" ]; then echo "::error::Missing FTP_PASSWORD"; exit 1; fi
+          if [ -z "${{ secrets.FTP_SERVER }}" ]; then echo "::error::❌ Missing FTP_SERVER"; exit 1; fi
+          if [ -z "${{ secrets.FTP_USERNAME }}" ]; then echo "::error::❌ Missing FTP_USERNAME"; exit 1; fi
+          if [ -z "${{ secrets.FTP_PASSWORD }}" ]; then echo "::error::❌ Missing FTP_PASSWORD"; exit 1; fi
 
-          echo "✅ FTP secrets verified"
+          echo "✅ All FTP secrets verified successfully"
           echo "FTP_SERVER=${{ secrets.FTP_SERVER }}" >> $GITHUB_ENV
           echo "FTP_USERNAME=${{ secrets.FTP_USERNAME }}" >> $GITHUB_ENV
           echo "FTP_PASSWORD=${{ secrets.FTP_PASSWORD }}" >> $GITHUB_ENV
@@ -88,13 +60,15 @@ jobs:
           echo "FTP_PORT=${{ env.FTP_PORT }}" >> $GITHUB_ENV
 
       # ========================================
-      # 4️⃣ Install Dependencies (Optional)
+      # 4️⃣ Show Repository Structure
       # ========================================
-      - name: 📦 Install dependencies
-        working-directory: backend
+      - name: 🧭 Show repository structure
         run: |
-          echo "Installing production dependencies..."
-          npm install --production --legacy-peer-deps
+          echo "Current directory: $(pwd)"
+          echo ""
+          ls -la
+          echo ""
+          echo "If you see a 'backend' folder, deployment will continue."
 
       # ========================================
       # 5️⃣ Prepare Deployment Package
@@ -102,6 +76,7 @@ jobs:
       - name: 🧹 Prepare deployment package
         run: |
           echo "Creating deployment package..."
+          cd backend
           rm -rf deployment && mkdir deployment
 
           rsync -av \
@@ -116,10 +91,12 @@ jobs:
             --exclude='*.md' \
             ./ ./deployment/
 
-          # Ensure start.sh is included
+          # Include start.sh
           if [ -f "start.sh" ]; then
             cp start.sh deployment/start.sh
             chmod +x deployment/start.sh
+          else
+            echo "::warning::⚠️ start.sh not found in backend folder"
           fi
 
           echo "📦 Deployment package ready:"
@@ -170,7 +147,7 @@ jobs:
           echo "2. Set Application Root to: myapp"
           echo "3. Set Startup File to: start.sh"
           echo "4. Permissions: start.sh → 755"
-          echo "5. Environment Variables: Add STRIPE, CLOUDINARY, SENDGRID, etc."
+          echo "5. Add required Environment Variables"
           echo "6. Restart App and check logs"
           echo ""
 
@@ -185,13 +162,13 @@ jobs:
           echo "=========================================="
           echo ""
           echo "🔍 Possible Issues:"
-          echo "• Missing FTP secrets (check repo settings)"
+          echo "• Missing FTP secrets"
           echo "• Disk full (error 552)"
-          echo "• Wrong directory path (${{ env.FTP_DIR }})"
+          echo "• Wrong FTP directory (${{ env.FTP_DIR }})"
           echo "• FTP timeout or invalid credentials"
           echo ""
           echo "🧰 Fix Steps:"
-          echo "1. Check GitHub → Settings → Secrets → Actions"
-          echo "2. Clean up cPanel space (delete old logs/tmp/node_modules)"
-          echo "3. Retry: GitHub Actions → Re-run workflow"
-          echo ""
+          echo "1. Go to GitHub → Settings → Secrets → Actions"
+          echo "2. Ensure FTP_SERVER, FTP_USERNAME, FTP_PASSWORD are added"
+          echo "3. Clean up cPanel space (logs/tmp/node_modules)"
+          echo "4. Retry workflow from Actions tab"
