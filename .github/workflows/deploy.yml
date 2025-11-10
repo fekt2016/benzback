@@ -100,7 +100,6 @@ jobs:
       # 5️⃣ Prepare Deployment Package
       # ========================================
       - name: 🧹 Prepare deployment package
-        working-directory: backend
         run: |
           echo "Creating deployment package..."
           rm -rf deployment && mkdir deployment
