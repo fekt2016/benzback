@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "backend/**"
+      - "**"
       - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
@@ -68,7 +68,7 @@ jobs:
           echo ""
           ls -la
           echo ""
-          echo "If you see a 'backend' folder, deployment will continue."
+          echo "✅ Confirm your server.js, app.js, and package.json appear above."
 
       # ========================================
       # 5️⃣ Prepare Deployment Package
@@ -76,7 +76,6 @@ jobs:
       - name: 🧹 Prepare deployment package
         run: |
           echo "Creating deployment package..."
-          cd backend
           rm -rf deployment && mkdir deployment
 
           rsync -av \
@@ -96,7 +95,7 @@ jobs:
             cp start.sh deployment/start.sh
             chmod +x deployment/start.sh
           else
-            echo "::warning::⚠️ start.sh not found in backend folder"
+            echo "::warning::⚠️ start.sh not found in root folder"
           fi
 
           echo "📦 Deployment package ready:"
@@ -112,7 +111,7 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           port: ${{ env.FTP_PORT }}
-          local-dir: backend/deployment/
+          local-dir: deployment/
           server-dir: ${{ env.FTP_DIR }}
           log-level: verbose
           timeout: 120000
@@ -147,7 +146,7 @@ jobs:
           echo "2. Set Application Root to: myapp"
           echo "3. Set Startup File to: start.sh"
           echo "4. Permissions: start.sh → 755"
-          echo "5. Add required Environment Variables"
+          echo "5. Environment Variables: Add STRIPE, CLOUDINARY, SENDGRID, etc."
           echo "6. Restart App and check logs"
           echo ""
 
