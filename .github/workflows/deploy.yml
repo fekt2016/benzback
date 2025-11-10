@@ -170,4 +170,4 @@ jobs:
           echo "1. Go to GitHub → Settings → Secrets → Actions"
           echo "2. Ensure FTP_SERVER, FTP_USERNAME, FTP_PASSWORD are added"
           echo "3. Clean up cPanel space (logs/tmp/node_modules)"
-          echo "4. Retry workflow from Actions tab"
+          echo "4. Retry workflow from Actions tabs"
