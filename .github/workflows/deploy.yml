@@ -35,19 +35,75 @@ jobs:
 
       - name: Verify FTP Secrets
         id: verify-secrets
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
         run: |
           set -e
-          echo "Verifying FTP Secrets..."
-          if [ -z "${{ secrets.FTP_SERVER }}" ] || [ -z "${{ secrets.FTP_USERNAME }}" ] || [ -z "${{ secrets.FTP_PASSWORD }}" ]; then
-            echo "::error::Missing required FTP secrets!"
+          echo "=========================================="
+          echo "🔐 Verifying FTP Secrets"
+          echo "=========================================="
+          
+          # Check each secret individually with detailed error messages
+          MISSING_SECRETS=0
+          
+          if [ -z "$FTP_SERVER" ]; then
+            echo "::error::❌ FTP_SERVER secret is missing or empty!"
+            MISSING_SECRETS=$((MISSING_SECRETS + 1))
+          else
+            SERVER_LEN=${#FTP_SERVER}
+            echo "✅ FTP_SERVER: Set (length: $SERVER_LEN chars)"
+            # Show first few characters for verification (safe - doesn't expose full value)
+            echo "   Preview: ${FTP_SERVER:0:10}..."
+          fi
+          
+          if [ -z "$FTP_USERNAME" ]; then
+            echo "::error::❌ FTP_USERNAME secret is missing or empty!"
+            MISSING_SECRETS=$((MISSING_SECRETS + 1))
+          else
+            USERNAME_LEN=${#FTP_USERNAME}
+            echo "✅ FTP_USERNAME: Set (length: $USERNAME_LEN chars)"
+            echo "   Preview: ${FTP_USERNAME:0:5}..."
+          fi
+          
+          if [ -z "$FTP_PASSWORD" ]; then
+            echo "::error::❌ FTP_PASSWORD secret is missing or empty!"
+            MISSING_SECRETS=$((MISSING_SECRETS + 1))
+          else
+            PASSWORD_LEN=${#FTP_PASSWORD}
+            echo "✅ FTP_PASSWORD: Set (length: $PASSWORD_LEN chars)"
+            echo "   Preview: *** (hidden for security)"
+          fi
+          
+          echo "=========================================="
+          
+          if [ $MISSING_SECRETS -gt 0 ]; then
+            echo "::error::❌ Missing $MISSING_SECRETS required FTP secret(s)!"
+            echo ""
+            echo "📋 TROUBLESHOOTING GUIDE:"
+            echo "1. Go to: Repository → Settings → Secrets and variables → Actions"
+            echo "2. Verify these secrets exist:"
+            echo "   - FTP_SERVER (e.g., ftp.yourdomain.com)"
+            echo "   - FTP_USERNAME (your FTP username)"
+            echo "   - FTP_PASSWORD (your FTP password)"
+            echo "3. If using environment protection:"
+            echo "   - Check: Settings → Environments → production → Secrets"
+            echo "   - Ensure secrets are added to the 'production' environment"
+            echo "4. After adding secrets, re-run this workflow"
+            echo ""
             exit 1
           fi
-          echo "✅ FTP secrets verified"
-          echo "FTP_SERVER=${{ secrets.FTP_SERVER }}" >> $GITHUB_ENV
-          echo "FTP_USERNAME=${{ secrets.FTP_USERNAME }}" >> $GITHUB_ENV
-          echo "FTP_PASSWORD=${{ secrets.FTP_PASSWORD }}" >> $GITHUB_ENV
+          
+          # Set environment variables for use in subsequent steps
+          echo "FTP_SERVER=$FTP_SERVER" >> $GITHUB_ENV
+          echo "FTP_USERNAME=$FTP_USERNAME" >> $GITHUB_ENV
+          echo "FTP_PASSWORD=$FTP_PASSWORD" >> $GITHUB_ENV
           echo "FTP_DIR=${{ env.FTP_DIR }}" >> $GITHUB_ENV
           echo "FTP_PORT=${{ env.FTP_PORT }}" >> $GITHUB_ENV
+          
+          echo "✅ All FTP secrets verified and set as environment variables"
+          echo "=========================================="
 
       - name: Prepare deployment package
         working-directory: backend
@@ -63,10 +119,15 @@ jobs:
       - name: Deploy via FTP
         id: ftp-deploy
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        env:
+          # Pass secrets directly to the action (more reliable than env vars)
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
         with:
-          server: ${{ env.FTP_SERVER }}
-          username: ${{ env.FTP_USERNAME }}
-          password: ${{ env.FTP_PASSWORD }}
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
           port: ${{ env.FTP_PORT }}
           local-dir: backend/deployment/
           server-dir: ${{ env.FTP_DIR }}
