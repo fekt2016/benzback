@@ -41,9 +41,9 @@ jobs:
       # ========================================
       - name: 🔍 Debug FTP Secrets (Show Real Values)
         env:
-          FTP_SERVER: ${{ secrets.FTP_SERVER }}
-          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
-          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_SERVER: ${{ Secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ Secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ Secrets.FTP_PASSWORD }}
         run: |
           echo "=========================================="
           echo "🔍 FTP SECRETS - REAL VALUES (for debugging)"
