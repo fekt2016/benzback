@@ -10,7 +10,7 @@ on:
 
 env:
   NODE_VERSION: "20"
-  FTP_DIR: "public_html/myapp/backend"
+  FTP_DIR: "public_html/myapp/"
   FTP_PORT: "21"
 
 jobs:
@@ -32,6 +32,49 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: ""
+
+      - name: Debug FTP Secrets (Preview)
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          echo "=========================================="
+          echo "🔍 Debug: FTP Secrets Preview (Before Verification)"
+          echo "=========================================="
+          echo ""
+          if [ -z "$FTP_SERVER" ]; then
+            echo "❌ FTP_SERVER: NOT SET or EMPTY"
+          else
+            SERVER_LEN=${#FTP_SERVER}
+            echo "✅ FTP_SERVER: Set"
+            echo "   Length: $SERVER_LEN characters"
+            echo "   Preview: ${FTP_SERVER:0:15}..."
+            echo "   Full value: $FTP_SERVER"
+          fi
+          echo ""
+          if [ -z "$FTP_USERNAME" ]; then
+            echo "❌ FTP_USERNAME: NOT SET or EMPTY"
+          else
+            USERNAME_LEN=${#FTP_USERNAME}
+            echo "✅ FTP_USERNAME: Set"
+            echo "   Length: $USERNAME_LEN characters"
+            echo "   Preview: ${FTP_USERNAME:0:10}..."
+            echo "   Full value: $FTP_USERNAME"
+          fi
+          echo ""
+          if [ -z "$FTP_PASSWORD" ]; then
+            echo "❌ FTP_PASSWORD: NOT SET or EMPTY"
+          else
+            PASSWORD_LEN=${#FTP_PASSWORD}
+            echo "✅ FTP_PASSWORD: Set"
+            echo "   Length: $PASSWORD_LEN characters"
+            echo "   Preview: ${FTP_PASSWORD:0:5}*** (first 5 chars shown)"
+            echo "   Full value: $FTP_PASSWORD"
+          fi
+          echo ""
+          echo "=========================================="
+          echo ""
 
       - name: Verify FTP Secrets
         id: verify-secrets
