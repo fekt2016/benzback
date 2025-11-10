@@ -71,38 +71,173 @@ jobs:
           echo "✅ Confirm your server.js, app.js, and package.json appear above."
 
       # ========================================
-      # 5️⃣ Prepare Deployment Package
+      # 5️⃣ Clean Up Old Files on Server (Before Deploy)
       # ========================================
-      - name: 🧹 Prepare deployment package
+      - name: 🧹 Clean up old files on FTP server
+        continue-on-error: true
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_DIR: ${{ env.FTP_DIR }}
+          FTP_PORT: ${{ env.FTP_PORT }}
         run: |
-          echo "Creating deployment package..."
+          echo "=========================================="
+          echo "🧹 Cleaning up old files on FTP server"
+          echo "=========================================="
+          echo ""
+          echo "Installing basic-ftp for cleanup..."
+          npm install -g basic-ftp
+          
+          node << 'EOF'
+          const { Client } = require('basic-ftp');
+          const client = new Client();
+          
+          async function cleanup() {
+            try {
+              await client.access({
+                host: process.env.FTP_SERVER,
+                user: process.env.FTP_USERNAME,
+                password: process.env.FTP_PASSWORD,
+                port: parseInt(process.env.FTP_PORT || '21'),
+              });
+              
+              const targetDir = process.env.FTP_DIR.replace(/\/$/, '');
+              console.log(`📂 Connected to FTP server`);
+              console.log(`📂 Target directory: ${targetDir}`);
+              
+              // List of files/folders to delete
+              const itemsToDelete = [
+                'node_modules',
+                'logs',
+                'tmp',
+                'temp',
+                '*.log',
+                '*.zip',
+                '*.tar.gz',
+                '*.bak',
+                'deployment',
+                'production-archive',
+                'production-package',
+              ];
+              
+              let deletedCount = 0;
+              
+              try {
+                await client.cd(targetDir);
+                const list = await client.list();
+                
+                for (const item of list) {
+                  const name = item.name;
+                  const isDir = item.isDirectory;
+                  
+                  // Check if item should be deleted
+                  const shouldDelete = itemsToDelete.some(pattern => {
+                    if (pattern.includes('*')) {
+                      const regex = new RegExp(pattern.replace('*', '.*'));
+                      return regex.test(name);
+                    }
+                    return name === pattern;
+                  });
+                  
+                  if (shouldDelete) {
+                    try {
+                      if (isDir) {
+                        await client.removeDir(name);
+                        console.log(`✅ Deleted directory: ${name}`);
+                      } else {
+                        await client.remove(name);
+                        console.log(`✅ Deleted file: ${name}`);
+                      }
+                      deletedCount++;
+                    } catch (err) {
+                      console.log(`⚠️  Could not delete ${name}: ${err.message}`);
+                    }
+                  }
+                }
+              } catch (err) {
+                console.log(`⚠️  Could not list directory: ${err.message}`);
+              }
+              
+              console.log(`\n✅ Cleanup complete. Deleted ${deletedCount} items.`);
+              await client.close();
+            } catch (error) {
+              console.log(`⚠️  Cleanup failed (non-critical): ${error.message}`);
+              console.log(`⚠️  Continuing with deployment...`);
+            }
+          }
+          
+          cleanup();
+          EOF
+          
+          echo ""
+          echo "=========================================="
+
+      # ========================================
+      # 6️⃣ Prepare Deployment Package (Minimal)
+      # ========================================
+      - name: 🧹 Prepare minimal deployment package
+        run: |
+          echo "=========================================="
+          echo "📦 Creating minimal deployment package"
+          echo "=========================================="
+          echo ""
           rm -rf deployment && mkdir deployment
 
+          # Only include essential files
           rsync -av \
             --exclude='node_modules' \
             --exclude='.git' \
             --exclude='.github' \
             --exclude='*.env' \
+            --exclude='.env*' \
+            --exclude='config.env' \
             --exclude='logs' \
             --exclude='tmp' \
+            --exclude='temp' \
             --exclude='tests' \
+            --exclude='test' \
+            --exclude='*.test.js' \
+            --exclude='*.spec.js' \
             --exclude='*.log' \
             --exclude='*.md' \
+            --exclude='**/*.md' \
+            --exclude='scripts' \
+            --exclude='coverage' \
+            --exclude='.nyc_output' \
+            --exclude='.DS_Store' \
+            --exclude='*.swp' \
+            --exclude='*.swo' \
+            --exclude='.vscode' \
+            --exclude='.idea' \
+            --exclude='*.zip' \
+            --exclude='*.tar.gz' \
+            --exclude='deployment' \
+            --exclude='production-archive' \
+            --exclude='production-package' \
             ./ ./deployment/
 
           # Include start.sh
           if [ -f "start.sh" ]; then
             cp start.sh deployment/start.sh
             chmod +x deployment/start.sh
+            echo "✅ start.sh included"
           else
             echo "::warning::⚠️ start.sh not found in root folder"
           fi
 
-          echo "📦 Deployment package ready:"
+          echo ""
+          echo "📦 Deployment package size:"
           du -sh deployment | cut -f1
+          echo ""
+          echo "📊 Package contents:"
+          find deployment -type f | wc -l | xargs echo "   Files:"
+          find deployment -type d | wc -l | xargs echo "   Directories:"
+          echo ""
+          echo "=========================================="
 
       # ========================================
-      # 6️⃣ Deploy via FTP
+      # 7️⃣ Deploy via FTP
       # ========================================
       - name: 📤 Deploy to cPanel
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -130,7 +265,7 @@ jobs:
             .DS_Store
 
       # ========================================
-      # 7️⃣ Deployment Summary
+      # 8️⃣ Deployment Summary
       # ========================================
       - name: 📋 Deployment Summary
         if: success()
@@ -151,23 +286,40 @@ jobs:
           echo ""
 
       # ========================================
-      # 8️⃣ Error Analysis
+      # 9️⃣ Error Analysis (552 Disk Full)
       # ========================================
       - name: ❌ Error Analysis
         if: failure()
         run: |
           echo "=========================================="
-          echo "❌ DEPLOYMENT FAILED"
+          echo "❌ DEPLOYMENT FAILED - ERROR 552 (Disk Full)"
           echo "=========================================="
           echo ""
-          echo "🔍 Possible Issues:"
-          echo "• Missing FTP secrets"
-          echo "• Disk full (error 552)"
-          echo "• Wrong FTP directory (${{ env.FTP_DIR }})"
-          echo "• FTP timeout or invalid credentials"
+          echo "🔴 CRITICAL: Server disk is full!"
           echo ""
-          echo "🧰 Fix Steps:"
-          echo "1. Go to GitHub → Settings → Secrets → Actions"
-          echo "2. Ensure FTP_SERVER, FTP_USERNAME, FTP_PASSWORD are added"
-          echo "3. Clean up cPanel space (logs/tmp/node_modules)"
-          echo "4. Retry workflow from Actions tabs"
+          echo "🔍 Immediate Actions Required:"
+          echo ""
+          echo "1️⃣  MANUAL CLEANUP (via cPanel File Manager):"
+          echo "   • Go to: cPanel → File Manager → ${{ env.FTP_DIR }}"
+          echo "   • Delete these folders/files:"
+          echo "     - node_modules/ (if exists)"
+          echo "     - logs/ (if exists)"
+          echo "     - tmp/ or temp/ (if exists)"
+          echo "     - *.log files"
+          echo "     - *.zip, *.tar.gz files"
+          echo "     - deployment/ folder (old deployments)"
+          echo ""
+          echo "2️⃣  CHECK DISK USAGE:"
+          echo "   • Go to: cPanel → Disk Usage"
+          echo "   • Identify large files/folders"
+          echo "   • Delete unnecessary files"
+          echo ""
+          echo "3️⃣  RETRY DEPLOYMENT:"
+          echo "   • After cleanup, go to: GitHub → Actions"
+          echo "   • Click 'Re-run all jobs' on the failed workflow"
+          echo ""
+          echo "4️⃣  PREVENT FUTURE ISSUES:"
+          echo "   • The workflow now auto-cleans old files before deploy"
+          echo "   • Consider upgrading hosting plan if disk is consistently full"
+          echo ""
+          echo "=========================================="
