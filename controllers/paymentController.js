@@ -2,11 +2,12 @@ const { catchAsync } = require("../utils/catchAsync");
 const Booking = require("../models/bookingModel");
 const AppError = require("../utils/appError");
 const { getFrontendUrl } = require("../utils/helper");
-const { getStripe } = require("../services/stripeClient");
+// LAZY LOADING: Don't import getStripe at module level
+// It will be loaded on first use to prevent WASM memory allocation at startup
+// const { getStripe } = require("../services/stripeClient");
 
-// WASM MEMORY OPTIMIZATION: Use singleton Stripe instance
-// This prevents multiple Undici HTTP client instances from being created
-const stripe = getStripe();
+// LAZY LOADING OPTIMIZATION: Stripe is loaded on first use, not at module load
+// This prevents WebAssembly memory allocation at application startup
 
 // Cached Stripe config
 const STRIPE_CONFIG = {
@@ -50,6 +51,10 @@ function cleanupBookingData(booking) {
 
 /** 🔹 Create Stripe Checkout Session */
 exports.createStripePayment = catchAsync(async (req, res, next) => {
+  // LAZY LOAD: Get Stripe instance on first use (not at module load)
+  const { getStripe } = require("../services/stripeClient");
+  const stripe = getStripe();
+  
   const { metadata, line_items, customer_email, mobile = false } = req.body;
 
   if (!metadata?.booking_id)
@@ -142,6 +147,10 @@ exports.getBookingConfirmation = catchAsync(async (req, res, next) => {
   let paymentStatus = booking.paymentStatus || "unpaid";
 
   try {
+    // LAZY LOAD: Get Stripe instance on first use (not at module load)
+    const { getStripe } = require("../services/stripeClient");
+    const stripe = getStripe();
+    
     // Retrieve session if not yet marked paid
     let paymentJustConfirmed = false;
     if (booking.stripeSessionId && booking.paymentStatus !== "paid") {

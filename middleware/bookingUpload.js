@@ -56,7 +56,14 @@ exports.processBookingFiles = async (req, res, next) => {
   const filesToCleanup = []; // Track files for cleanup
   
   try {
-    const cloudinary = req.app.get("cloudinary");
+    // LAZY LOAD: Get Cloudinary instance on first use (not at module load)
+    // This prevents WASM memory allocation at application startup
+    const { getCloudinary } = require("../services/cloudinaryClient");
+    const cloudinary = getCloudinary();
+    
+    if (!cloudinary) {
+      return next(new Error("Cloudinary is not configured"));
+    }
 
     // Upload from file path (disk storage) instead of buffer
     const uploadFromFile = (filePath, folder, publicId) =>

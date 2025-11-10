@@ -53,7 +53,15 @@ exports.processAvatar = async (req, res, next) => {
     }
 
     tempFilePath = req.file.path; // Store path for cleanup
-    const cloudinary = req.app.get("cloudinary");
+    
+    // LAZY LOAD: Get Cloudinary instance on first use (not at module load)
+    // This prevents WASM memory allocation at application startup
+    const { getCloudinary } = require("../services/cloudinaryClient");
+    const cloudinary = getCloudinary();
+    
+    if (!cloudinary) {
+      return next(new Error("Cloudinary is not configured"));
+    }
 
     // Generate unique public ID
     const publicId = `avatar-${req.user?.id || "user"}-${Date.now()}`;
@@ -119,7 +127,13 @@ exports.handleAvatarRemoval = async (req, res, next) => {
   try {
     // Check if removeAvatar flag is set to true
     if (req.body.removeAvatar === "true" || req.body.removeAvatar === true) {
-      const cloudinary = req.app.get("cloudinary");
+      // LAZY LOAD: Get Cloudinary instance on first use (not at module load)
+      const { getCloudinary } = require("../services/cloudinaryClient");
+      const cloudinary = getCloudinary();
+      
+      if (!cloudinary) {
+        return next(new Error("Cloudinary is not configured"));
+      }
 
       // If user has existing avatar, delete it from Cloudinary
       if (req.user?.avatarPublicId) {

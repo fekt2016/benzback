@@ -1,17 +1,23 @@
 const {catchAsync} = require("../utils/catchAsync");
 const Notification = require("../models/notificationModel");
 
-exports.getNotifications = catchAsync(
+exports.getNotifications = catchAsync(async (req, res, next) => {
+  const paginateQuery = require("../utils/paginateQuery");
   
-  async (req, res, next) => {
-    const notifications = await Notification.find({ user: req.user._id });
+  const filter = { user: req.user._id };
 
-    res.status(200).json({
-      status: "success",
-      data: notifications,
-    });
-  }
-);
+  const { data: notifications, pagination } = await paginateQuery(Notification, filter, req, {
+    queryModifier: (query) => query.sort({ createdAt: -1 }),
+    defaultLimit: 20,
+    maxLimit: 100,
+  });
+
+  res.status(200).json({
+    status: "success",
+    ...pagination,
+    data: notifications,
+  });
+});
 exports.getUnreadCount = catchAsync(
   
   async (req, res, next) => {

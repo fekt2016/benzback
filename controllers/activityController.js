@@ -7,63 +7,52 @@ const AppError = require("../utils/appError");
  * GET /api/v1/activity
  */
 exports.getAllActivities = catchAsync(async (req, res, next) => {
+  const paginateQuery = require("../utils/paginateQuery");
   const {
     role,
     action,
     userId,
     startDate,
     endDate,
-    page = 1,
-    limit = 50,
   } = req.query;
 
   // Build query
-  const query = {};
+  const filter = {};
 
   if (role) {
-    query.role = role;
+    filter.role = role;
   }
 
   if (action) {
-    query.action = { $regex: action, $options: "i" }; // Case-insensitive search
+    filter.action = { $regex: action, $options: "i" }; // Case-insensitive search
   }
 
   if (userId) {
-    query.userId = userId;
+    filter.userId = userId;
   }
 
   if (startDate || endDate) {
-    query.createdAt = {};
+    filter.createdAt = {};
     if (startDate) {
-      query.createdAt.$gte = new Date(startDate);
+      filter.createdAt.$gte = new Date(startDate);
     }
     if (endDate) {
-      query.createdAt.$lte = new Date(endDate);
+      filter.createdAt.$lte = new Date(endDate);
     }
   }
 
-  // Pagination
-  const skip = (parseInt(page) - 1) * parseInt(limit);
-  const limitNum = parseInt(limit);
-
-  // Get total count for pagination
-  const total = await ActivityLog.countDocuments(query);
-
-  // Fetch activities with pagination
-  const activities = await ActivityLog.find(query)
-    .populate("userId", "fullName email")
-    .populate("driverId", "fullName email")
-    .sort({ createdAt: -1 }) // Latest first
-    .skip(skip)
-    .limit(limitNum)
-    .lean();
+  const { data: activities, pagination } = await paginateQuery(ActivityLog, filter, req, {
+    queryModifier: (query) => query
+      .populate("userId", "fullName email")
+      .populate("driverId", "fullName email")
+      .sort({ createdAt: -1 }), // Latest first
+    defaultLimit: 50,
+    maxLimit: 100,
+  });
 
   res.status(200).json({
     status: "success",
-    results: activities.length,
-    total,
-    page: parseInt(page),
-    totalPages: Math.ceil(total / limitNum),
+    ...pagination,
     data: activities,
   });
 });
@@ -73,32 +62,25 @@ exports.getAllActivities = catchAsync(async (req, res, next) => {
  * GET /api/v1/activity/me
  */
 exports.getMyActivities = catchAsync(async (req, res, next) => {
+  const paginateQuery = require("../utils/paginateQuery");
   const userId = req.user._id;
-  const { page = 1, limit = 50 } = req.query;
 
-  const skip = (parseInt(page) - 1) * parseInt(limit);
-  const limitNum = parseInt(limit);
-
-  const query = {
+  const filter = {
     $or: [{ userId }, { driverId: userId }], // Include both user and driver activities
   };
 
-  const total = await ActivityLog.countDocuments(query);
-
-  const activities = await ActivityLog.find(query)
-    .populate("userId", "fullName email")
-    .populate("driverId", "fullName email")
-    .sort({ createdAt: -1 })
-    .skip(skip)
-    .limit(limitNum)
-    .lean();
+  const { data: activities, pagination } = await paginateQuery(ActivityLog, filter, req, {
+    queryModifier: (query) => query
+      .populate("userId", "fullName email")
+      .populate("driverId", "fullName email")
+      .sort({ createdAt: -1 }),
+    defaultLimit: 50,
+    maxLimit: 100,
+  });
 
   res.status(200).json({
     status: "success",
-    results: activities.length,
-    total,
-    page: parseInt(page),
-    totalPages: Math.ceil(total / limitNum),
+    ...pagination,
     data: activities,
   });
 });

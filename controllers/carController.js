@@ -2,8 +2,8 @@ const Car = require("../models/carModel");
 const { catchAsync } = require("../utils/catchAsync");
 const AppError = require("../utils/appError");
 const { findByIdOrFail } = require("../utils/findByIdHelper");
-const { parsePagination, calculatePaginationMeta, executePaginatedQuery } = require("../utils/paginationHelper");
-const { sendSuccess, sendPaginatedSuccess, sendCreated, sendDeleted } = require("../utils/responseHandler");
+const paginateQuery = require("../utils/paginateQuery");
+const { sendSuccess, sendCreated, sendDeleted } = require("../utils/responseHandler");
 const { buildTextSearch, buildNumericRange, buildStatusFilter, mergeFilters } = require("../utils/queryBuilder");
 
 /**
@@ -11,7 +11,7 @@ const { buildTextSearch, buildNumericRange, buildStatusFilter, mergeFilters } = 
  * Returns: { status: "success", results: number, data: Car[] }
  */
 exports.getAllCars = catchAsync(async (req, res, next) => {
-  const { page, limit, sort = "-createdAt", status, make, series, minPrice, maxPrice } = req.query;
+  const { sort = "-createdAt", status, make, series, minPrice, maxPrice } = req.query;
 
   // Build filter using query builder utilities
   const filters = mergeFilters(
@@ -21,26 +21,21 @@ exports.getAllCars = catchAsync(async (req, res, next) => {
     buildNumericRange(minPrice, maxPrice, "pricePerDay")
   );
 
-  // Parse pagination
-  const { skip, limit: limitNum, page: pageNum } = parsePagination({ page, limit });
-
-  // Build query
-  const query = Car.find(filters)
-    .select("-rentalHistory -__v")
-    .sort(sort);
-
   // Execute paginated query
-  const [cars, total] = await executePaginatedQuery({
-    query,
-    countQuery: Car.countDocuments(filters),
-    skip,
-    limit: limitNum,
-    lean: true,
+  const { data: cars, pagination } = await paginateQuery(Car, filters, req, {
+    queryModifier: (query) => query
+      .select("-rentalHistory -__v")
+      .sort(sort),
+    defaultLimit: 20,
+    maxLimit: 100,
   });
 
   // Send paginated response
-  const pagination = calculatePaginationMeta(total, limitNum, pageNum, cars.length);
-  sendPaginatedSuccess(res, cars, pagination);
+  res.status(200).json({
+    status: "success",
+    ...pagination,
+    data: cars,
+  });
 });
 
 /**

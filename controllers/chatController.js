@@ -444,39 +444,27 @@ exports.closeSession = catchAsync(async (req, res, next) => {
  * GET /api/v1/chat/admin/sessions
  */
 exports.getAllSessions = catchAsync(async (req, res, next) => {
+  const paginateQuery = require("../utils/paginateQuery");
   const adminId = req.user._id;
-  const { page = 1, limit = 50 } = req.query;
 
-  // Add pagination to prevent loading all sessions at once (memory optimization)
-  const skip = (parseInt(page) - 1) * parseInt(limit);
-  const limitNum = Math.min(parseInt(limit) || 50, 100); // Max 100 per page
+  const filter = {
+    assignedAdmin: adminId, // Only show chats assigned to this admin
+    initiatedByUser: true, // Only user-initiated chats
+  };
 
-  // Show only chats where this admin is assigned
-  const [sessions, total] = await Promise.all([
-    ChatSession.find({
-      assignedAdmin: adminId, // Only show chats assigned to this admin
-      initiatedByUser: true, // Only user-initiated chats
-    })
+  const { data: sessions, pagination } = await paginateQuery(ChatSession, filter, req, {
+    queryModifier: (query) => query
       .sort({ lastMessageAt: -1, createdAt: -1 })
       .populate("userId", "fullName email")
       .populate("driverId", "fullName email")
-      .populate("assignedAdmin", "fullName email")
-      .skip(skip)
-      .limit(limitNum)
-      .lean(), // Use lean() to reduce memory usage
-    ChatSession.countDocuments({
-      assignedAdmin: adminId,
-      initiatedByUser: true,
-    })
-  ]);
+      .populate("assignedAdmin", "fullName email"),
+    defaultLimit: 50,
+    maxLimit: 100,
+  });
 
   res.status(200).json({
     status: "success",
-    results: sessions.length,
-    total,
-    page: parseInt(page),
-    limit: limitNum,
-    totalPages: Math.ceil(total / limitNum),
+    ...pagination,
     data: sessions,
   });
 });
@@ -487,40 +475,27 @@ exports.getAllSessions = catchAsync(async (req, res, next) => {
  * GET /api/v1/chat/admin/waiting
  */
 exports.getWaitingChats = catchAsync(async (req, res, next) => {
-  // Add pagination to prevent loading all waiting chats at once (memory optimization)
-  const { page = 1, limit = 50 } = req.query;
-  const skip = (parseInt(page) - 1) * parseInt(limit);
-  const limitNum = Math.min(parseInt(limit) || 50, 100); // Max 100 per page
+  const paginateQuery = require("../utils/paginateQuery");
 
-  // Show chats that are waiting for an admin (not yet assigned)
-  const [sessions, total] = await Promise.all([
-    ChatSession.find({
-      status: "waiting",
-      isEscalated: true,
-      assignedAdmin: null, // Not yet assigned to any admin
-      initiatedByUser: true,
-    })
+  const filter = {
+    status: "waiting",
+    isEscalated: true,
+    assignedAdmin: null, // Not yet assigned to any admin
+    initiatedByUser: true,
+  };
+
+  const { data: sessions, pagination } = await paginateQuery(ChatSession, filter, req, {
+    queryModifier: (query) => query
       .sort({ escalatedAt: -1, createdAt: -1 })
       .populate("userId", "fullName email")
-      .populate("driverId", "fullName email")
-      .skip(skip)
-      .limit(limitNum)
-      .lean(), // Use lean() to reduce memory usage
-    ChatSession.countDocuments({
-      status: "waiting",
-      isEscalated: true,
-      assignedAdmin: null,
-      initiatedByUser: true,
-    })
-  ]);
+      .populate("driverId", "fullName email"),
+    defaultLimit: 50,
+    maxLimit: 100,
+  });
 
   res.status(200).json({
     status: "success",
-    results: sessions.length,
-    total,
-    page: parseInt(page),
-    limit: limitNum,
-    totalPages: Math.ceil(total / limitNum),
+    ...pagination,
     data: sessions,
   });
 });

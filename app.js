@@ -9,8 +9,10 @@ const compression = require("compression");
 const cookieParser = require("cookie-parser");
 const rateLimit = require("express-rate-limit");
 const path = require("path");
-const { getCloudinary } = require("./services/cloudinaryClient");
-const { initializeSendGrid } = require("./services/sendGridClient");
+// LAZY LOADING: Don't import service clients at startup
+// They will be loaded on first use to prevent WASM memory allocation at startup
+// const { getCloudinary } = require("./services/cloudinaryClient");
+// const { initializeSendGrid } = require("./services/sendGridClient");
 
 // Load env vars (must be before any other imports that use process.env)
 dotenv.config({ path: "./config.env" });
@@ -34,23 +36,21 @@ const debugRouter = require("./routes/debugRoutes");
 const app = express();
 
 /* =========================
-   Cloudinary Configuration (Singleton)
+   Cloudinary Configuration (Lazy Loading)
 ========================= */
-// WASM MEMORY OPTIMIZATION: Use singleton Cloudinary instance
-// This ensures only ONE HTTP client instance exists, preventing WASM memory leaks
-const cloudinary = getCloudinary();
-if (cloudinary) {
-  app.set("cloudinary", cloudinary);
-  console.log("✅ Cloudinary singleton configured in app.js");
-} else {
-  console.warn("⚠️  Cloudinary not configured - missing environment variables");
-}
+// LAZY LOADING OPTIMIZATION: Cloudinary is NOT initialized at startup
+// It will be loaded on first use via getCloudinary() in middleware/controllers
+// This prevents WASM memory allocation at application startup
+// Middleware will get Cloudinary lazily: const cloudinary = require("./services/cloudinaryClient").getCloudinary();
+console.log("💡 Cloudinary will be loaded lazily on first use (not at startup)");
 
 /* =========================
-   SendGrid Configuration (Singleton)
+   SendGrid Configuration (Lazy Loading)
 ========================= */
-// WASM MEMORY OPTIMIZATION: Initialize SendGrid singleton at startup
-initializeSendGrid();
+// LAZY LOADING OPTIMIZATION: SendGrid is NOT initialized at startup
+// It will be loaded on first use via getSendGrid() in email services
+// This prevents WASM memory allocation at application startup
+console.log("💡 SendGrid will be loaded lazily on first use (not at startup)");
 
 /* =========================
    Security Middlewares

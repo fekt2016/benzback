@@ -1,8 +1,8 @@
 // utils/emailService.js
-// WASM MEMORY OPTIMIZATION: Use singleton SendGrid client
-// This ensures only ONE HTTP client instance exists, preventing WASM memory leaks
-const { getSendGrid } = require("../services/sendGridClient");
-const sgMail = getSendGrid();
+// LAZY LOADING OPTIMIZATION: SendGrid is loaded on first use, not at module load
+// This prevents WebAssembly memory allocation at application startup
+// const { getSendGrid } = require("../services/sendGridClient");
+// const sgMail = getSendGrid(); // Moved to lazy loading
 
 class EmailService {
   constructor() {
@@ -71,6 +71,14 @@ class EmailService {
       );
 
       console.log(`📧 Attempting to send email to ${to} from ${typeof formattedFrom === 'string' ? formattedFrom : formattedFrom.email}: ${subject}`);
+      
+      // LAZY LOAD: Get SendGrid instance on first use (not at module load)
+      const { getSendGrid } = require("../services/sendGridClient");
+      const sgMail = getSendGrid();
+      
+      if (!sgMail) {
+        throw new Error("SendGrid is not configured");
+      }
       
       const result = await sgMail.send(msg);
       console.log(`✅ Email sent successfully to ${to} from ${typeof formattedFrom === 'string' ? formattedFrom : formattedFrom.email}: ${subject}`);

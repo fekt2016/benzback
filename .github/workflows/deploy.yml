@@ -1,16 +1,17 @@
-name: 🚀 Deploy Backend to cPanel
+name: Deploy Backend to cPanel
 
 on:
   push:
     branches: [main]
     paths:
-      - '**'
+      - 'backend/**'
+      - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
 env:
   NODE_VERSION: "20"
-  FTP_DIR: "public_html/myapp"   # 👈 MANUAL FTP DIRECTORY
-  FTP_PORT: "21"                 # 👈 Change if your FTP server uses another port
+  FTP_DIR: "public_html/myapp/backend"
+  FTP_PORT: "21"
 
 jobs:
   deploy:
@@ -21,65 +22,126 @@ jobs:
       url: https://benzflex.com
 
     steps:
-      # =========================================
-      # Step 1: Checkout Code
-      # =========================================
-      - name: 🚚 Checkout code
+      - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
-      # =========================================
-      # Step 2: Debug Repo Structure (for safety)
-      # =========================================
-      - name: 🧭 Debug directory structure
-        run: |
-          echo "Current directory: $(pwd)"
-          echo "Contents of repo root:"
-          ls -la | head -50
-
-      # =========================================
-      # Step 3: Detect Dependency Manager
-      # =========================================
-      - name: 🔍 Detect dependency manager
-        run: |
-          if [ -f "package-lock.json" ]; then
-            echo "📦 Detected npm (package-lock.json found)"
-          elif [ -f "yarn.lock" ]; then
-            echo "📦 Detected Yarn (yarn.lock found)"
-          else
-            echo "⚠️  No lock file found — caching disabled"
-          fi
-
-      # =========================================
-      # Step 4: Setup Node.js with Auto Cache
-      # =========================================
-      - name: ⚙️ Setup Node.js (auto cache detection)
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: ${{ hashFiles('package-lock.json') != '' && 'npm' || hashFiles('yarn.lock') != '' && 'yarn' || '' }}
-          cache-dependency-path: |
-            package-lock.json
-            yarn.lock
+          cache: ""
 
-      # =========================================
-      # Step 5: Verify FTP Secrets
-      # =========================================
-      - name: 🔐 Verify FTP Secrets
+      - name: Verify FTP Secrets
+        id: verify-secrets
         run: |
           set -e
+          echo "Verifying FTP Secrets..."
           if [ -z "${{ secrets.FTP_SERVER }}" ] || [ -z "${{ secrets.FTP_USERNAME }}" ] || [ -z "${{ secrets.FTP_PASSWORD }}" ]; then
             echo "::error::Missing required FTP secrets!"
-            echo ""
-            echo "Required GitHub Secrets:"
-            echo "  - FTP_SERVER"
-            echo "  - FTP_USERNAME"
-            echo "  - FTP_PASSWORD"
             exit 1
           fi
-          
           echo "✅ FTP secrets verified"
           echo "FTP_SERVER=${{ secrets.FTP_SERVER }}" >> $GITHUB_ENV
           echo "FTP_USERNAME=${{ secrets.FTP_USERNAME }}" >> $GITHUB_ENV
           echo "FTP_PASSWORD=${{ secrets.FTP_PASSWORD }}" >> $GITHUB_ENV
           echo "FTP_DIR=${{ env.FTP_DIR }}" >> $GITHUB_ENV
-          echo "FTP_PO
+          echo "FTP_PORT=${{ env.FTP_PORT }}" >> $GITHUB_ENV
+
+      - name: Prepare deployment package
+        working-directory: backend
+        run: |
+          set -e
+          echo "Preparing minimal deployment package..."
+          rm -rf deployment && mkdir -p deployment
+          rsync -av --exclude='node_modules' --exclude='.git' --exclude='.github' --exclude='test' --exclude='tests' --exclude='*.test.js' --exclude='*.spec.js' --exclude='logs' --exclude='*.log' --exclude='*.md' --exclude='**/*.md' --exclude='config.env' --exclude='*.env' --exclude='.env*' --exclude='tmp' --exclude='temp' --exclude='deployment' --exclude='production-archive' --exclude='production-package' --exclude='test-*.js' --exclude='quick-*.js' --exclude='monitor-*.js' --exclude='run-*.js' --exclude='check-*.js' --exclude='analyze-*.js' --exclude='cpanel-diagnose.sh' --exclude='create-production-archive.sh' --exclude='*.zip' --exclude='*.tar.gz' --exclude='.gitignore' --exclude='.DS_Store' --exclude='*.swp' --exclude='*.swo' --exclude='.vscode' --exclude='.idea' --exclude='coverage' --exclude='.nyc_output' --exclude='scripts' ./ ./deployment/
+          cp start.sh deployment/start.sh && chmod +x deployment/start.sh
+          echo "📦 Deployment package size: $(du -sh deployment | cut -f1)"
+          echo "✅ Critical files verified"
+
+      - name: Deploy via FTP
+        id: ftp-deploy
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ env.FTP_SERVER }}
+          username: ${{ env.FTP_USERNAME }}
+          password: ${{ env.FTP_PASSWORD }}
+          port: ${{ env.FTP_PORT }}
+          local-dir: backend/deployment/
+          server-dir: ${{ env.FTP_DIR }}
+          exclude: |
+            node_modules/**
+            .git/**
+            .github/**
+            test/**
+            tests/**
+            *.test.js
+            *.spec.js
+            logs/**
+            *.log
+            *.md
+            **/*.md
+            config.env
+            *.env
+            .env*
+            tmp/**
+            temp/**
+            deployment/**
+            production-archive/**
+            production-package/**
+            test-*.js
+            quick-*.js
+            monitor-*.js
+            run-*.js
+            check-*.js
+            analyze-*.js
+            cpanel-diagnose.sh
+            create-production-archive.sh
+            *.zip
+            *.tar.gz
+            .gitignore
+            .DS_Store
+            scripts/**
+          dangerous-clean-slate: false
+          log-level: verbose
+          timeout: 120000
+          dry-run: false
+
+      - name: Deployment Summary
+        if: success()
+        run: |
+          echo "🎉 DEPLOYMENT COMPLETED SUCCESSFULLY!"
+          echo "🌐 Application deployed to: ${{ env.FTP_DIR }}"
+          echo "🔗 Live URL: https://benzflex.com"
+          echo "📋 POST-DEPLOYMENT CHECKLIST:"
+          echo "1. Install Dependencies (on server): cd ${{ env.FTP_DIR }} && npm install --production --legacy-peer-deps"
+          echo "2. Set Environment Variables (in cPanel)"
+          echo "3. Set Startup File (in cPanel): start.sh"
+          echo "4. Set File Permissions (in cPanel File Manager): start.sh to 755"
+          echo "5. Restart Node.js App"
+          echo "6. Verify Deployment: Check logs for 'Memory limit is correctly set' and 'Server running'"
+
+      - name: Error Analysis
+        if: always()
+        run: |
+          echo "🔍 DEPLOYMENT STATUS ANALYSIS"
+          echo "📊 Step Status:"
+          echo "  Deploy via FTP: ${{ steps.ftp-deploy.outcome }}"
+          if [ "${{ job.status }}" != "success" ]; then
+            echo "❌ DEPLOYMENT FAILED"
+            if [ "${{ steps.ftp-deploy.outcome }}" == "failure" ]; then
+              echo "❌ FAILED: Deploy via FTP"
+              echo "🔴 CHECK FOR DISK FULL ERROR (552) IN LOGS ABOVE"
+              echo "IMMEDIATE ACTIONS REQUIRED:"
+              echo "1. Clean up server disk space: Delete logs/, tmp/, node_modules/, old archives in ${{ env.FTP_DIR }}"
+              echo "2. Check disk usage: cPanel → Disk Usage"
+              echo "3. After cleanup, retry deployment: GitHub Actions → Re-run workflow"
+              echo "Other common causes: FTP connection refused, Authentication failed, Directory not found, Network timeout"
+            else
+              echo "❌ FAILED: Earlier step (Setup/Preparation)"
+              echo "Check logs above to identify the failing step"
+            fi
+          else
+            echo "✅ All steps completed successfully!"
+          fi

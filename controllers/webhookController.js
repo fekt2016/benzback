@@ -2,13 +2,18 @@ const Booking = require("../models/bookingModel");
 const {catchAsync} = require("../utils/catchAsync");
 const emailServices = require("../utils/emailServices");
 const { getFrontendUrl } = require("../utils/helper");
-const { getStripe } = require("../services/stripeClient");
+// LAZY LOADING: Don't import getStripe at module level
+// It will be loaded on first use to prevent WASM memory allocation at startup
+// const { getStripe } = require("../services/stripeClient");
 
-// WASM MEMORY OPTIMIZATION: Use singleton Stripe instance
-// This prevents multiple Undici HTTP client instances from being created
-const stripe = getStripe();
+// LAZY LOADING OPTIMIZATION: Stripe is loaded on first use, not at module load
+// This prevents WebAssembly memory allocation at application startup
 
 exports.handleStripeWebhook = catchAsync(async (req, res, next) => {
+  // LAZY LOAD: Get Stripe instance on first use (not at module load)
+  const { getStripe } = require("../services/stripeClient");
+  const stripe = getStripe();
+  
   if (!stripe) {
     return res.status(500).json({ error: "Stripe is not configured" });
   }

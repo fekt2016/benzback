@@ -77,13 +77,19 @@ exports.validateCoupon = catchAsync(async (req, res, next) => {
  * GET /api/v1/coupons
  */
 exports.getAllCoupons = catchAsync(async (req, res, next) => {
-  const coupons = await Coupon.find({ isActive: true })
-    .sort({ createdAt: -1 })
-    .select("-__v");
+  const paginateQuery = require("../utils/paginateQuery");
+  
+  const filter = { isActive: true };
+
+  const { data: coupons, pagination } = await paginateQuery(Coupon, filter, req, {
+    queryModifier: (query) => query.sort({ createdAt: -1 }).select("-__v"),
+    defaultLimit: 20,
+    maxLimit: 100,
+  });
 
   res.status(200).json({
     status: "success",
-    results: coupons.length,
+    ...pagination,
     data: {
       coupons,
     },

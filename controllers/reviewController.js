@@ -51,16 +51,21 @@ exports.createReview = catchAsync( async (req, res, next) => {
 });
 
 
-exports.getCarReviews = catchAsync(
+exports.getCarReviews = catchAsync(async (req, res, next) => {
+  const paginateQuery = require("../utils/paginateQuery");
+  const { carId } = req.params;
   
-  async (req, res, next) => {
-    const {carId} = req.params;
-    const reviews = await Review.find({ car: carId}).populate("user", "fullName avatar");
+  const filter = { car: carId };
 
-    res.status(200).json({
-      status: "success",
-      results: reviews.length,
-      data: reviews,
-    });
-  }
-);
+  const { data: reviews, pagination } = await paginateQuery(Review, filter, req, {
+    queryModifier: (query) => query.populate("user", "fullName avatar").sort({ createdAt: -1 }),
+    defaultLimit: 20,
+    maxLimit: 100,
+  });
+
+  res.status(200).json({
+    status: "success",
+    ...pagination,
+    data: reviews,
+  });
+});

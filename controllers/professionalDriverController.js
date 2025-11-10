@@ -10,28 +10,33 @@ const moment = require("moment-timezone");
  * Only returns active drivers (status != "suspended")
  */
 exports.getAllProfessionalDrivers = catchAsync(async (req, res, next) => {
+  const paginateQuery = require("../utils/paginateQuery");
   const { status, available } = req.query;
   
   // Query professional drivers only
-  let query = { driverType: "professional" };
+  const filter = { driverType: "professional" };
   
   // Only return non-suspended drivers by default
   if (!status) {
-    query.status = { $ne: "suspended" };
+    filter.status = { $ne: "suspended" };
   } else {
-    query.status = status;
+    filter.status = status;
   }
   
   if (available === "true") {
-    query.status = "available";
-    query.verified = true;
+    filter.status = "available";
+    filter.verified = true;
   }
   
-  const drivers = await Driver.find(query).sort({ createdAt: -1 });
+  const { data: drivers, pagination } = await paginateQuery(Driver, filter, req, {
+    queryModifier: (query) => query.sort({ createdAt: -1 }),
+    defaultLimit: 20,
+    maxLimit: 100,
+  });
   
   res.status(200).json({
     status: "success",
-    results: drivers.length,
+    ...pagination,
     data: drivers,
   });
 });
@@ -42,14 +47,15 @@ exports.getAllProfessionalDrivers = catchAsync(async (req, res, next) => {
  * Supports filtering and pagination
  */
 exports.getAdminProfessionalDrivers = catchAsync(async (req, res, next) => {
-  const { status, verified, active, search, page = 1, limit = 50 } = req.query;
+  const paginateQuery = require("../utils/paginateQuery");
+  const { status, verified, active, search } = req.query;
   
-  // Build query
-  let query = {};
+  // Build filter
+  const filter = { driverType: "professional" };
   
   // Filter by verification
   if (verified !== undefined) {
-    query.verified = verified === "true" || verified === true;
+    filter.verified = verified === "true" || verified === true;
   }
   
   // Filter by active status (map to status field)
@@ -57,18 +63,18 @@ exports.getAdminProfessionalDrivers = catchAsync(async (req, res, next) => {
   // Note: active filter takes precedence over status filter if both are provided
   if (active !== undefined) {
     if (active === "true" || active === true) {
-      query.status = { $ne: "suspended" };
+      filter.status = { $ne: "suspended" };
     } else {
-      query.status = "suspended";
+      filter.status = "suspended";
     }
   } else if (status) {
     // Only apply status filter if active filter is not provided
-    query.status = status;
+    filter.status = status;
   }
   
   // Search by fullName, name, email, phone, or license number
   if (search) {
-    query.$or = [
+    filter.$or = [
       { fullName: { $regex: search, $options: "i" } },
       { name: { $regex: search, $options: "i" } }, // For rental drivers
       { email: { $regex: search, $options: "i" } },
@@ -78,29 +84,15 @@ exports.getAdminProfessionalDrivers = catchAsync(async (req, res, next) => {
     ];
   }
   
-  // Pagination
-  const skip = (parseInt(page) - 1) * parseInt(limit);
-  const limitNum = parseInt(limit);
-  
-  // Query professional drivers only
-  query.driverType = "professional";
-  
-  // Get total count for pagination
-  const total = await Driver.countDocuments(query);
-  
-  // Fetch drivers with pagination
-  const drivers = await Driver.find(query)
-    .sort({ createdAt: -1 })
-    .skip(skip)
-    .limit(limitNum);
+  const { data: drivers, pagination } = await paginateQuery(Driver, filter, req, {
+    queryModifier: (query) => query.sort({ createdAt: -1 }),
+    defaultLimit: 50,
+    maxLimit: 100,
+  });
   
   res.status(200).json({
     status: "success",
-    results: drivers.length,
-    total,
-    page: parseInt(page),
-    limit: limitNum,
-    totalPages: Math.ceil(total / limitNum),
+    ...pagination,
     data: drivers,
   });
 });

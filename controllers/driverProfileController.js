@@ -256,30 +256,33 @@ exports.getAvailableRequests = catchAsync(async (req, res, next) => {
   }
   
   // Only show pending requests that haven't been accepted
-  const requests = await Booking.find({
+  const filter = {
     requestDriver: true,
     driverRequestStatus: "pending",
     driverAssigned: false,
-  })
-    .populate("user", "fullName phone")
-    .populate("car", "name model images pricePerDay")
-    .select("pickupDate returnDate pickupLocation pickupTime totalPrice requestedAt car user")
-    .sort({ requestedAt: -1 })
-    .lean();
+  };
 
-  // Filter out expired requests (5 minutes)
+  // Filter out expired requests in the query (5 minutes)
   const now = new Date();
-  const validRequests = requests.filter((request) => {
-    if (!request.requestedAt) return false;
-    const requestAge = now - new Date(request.requestedAt);
-    return requestAge < 5 * 60 * 1000; // 5 minutes
+  const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
+  filter.requestedAt = { $gte: fiveMinutesAgo };
+
+  const paginateQuery = require("../utils/paginateQuery");
+  const { data: requests, pagination } = await paginateQuery(Booking, filter, req, {
+    queryModifier: (query) => query
+      .populate("user", "fullName phone")
+      .populate("car", "name model images pricePerDay")
+      .select("pickupDate returnDate pickupLocation pickupTime totalPrice requestedAt car user")
+      .sort({ requestedAt: -1 }),
+    defaultLimit: 20,
+    maxLimit: 100,
   });
 
   res.status(200).json({
     status: "success",
-    results: validRequests.length,
+    ...pagination,
     data: {
-      requests: validRequests,
+      requests,
     },
   });
 });
@@ -319,37 +322,43 @@ exports.getMyBookings = catchAsync(async (req, res, next) => {
   // Find bookings where this driver is the accepted driver
   // Note: Booking model has acceptedDriver field that references DriverProfile
   // For unified Driver model, we need to check both acceptedDriver and driver fields
-  const bookings = await Booking.find({
+  const filter = {
     $or: [
       { acceptedDriver: driverId },
       { driver: driverId },
       { professionalDriverId: driverId }
     ]
-  })
-    .populate("user", "fullName email phone")
-    .populate("car", "name model images")
-    .populate({
-      path: "acceptedDriver",
-      select: "status rating fullName",
-      populate: {
-        path: "user",
-        select: "fullName email phone"
-      }
-    })
-    .populate({
-      path: "driver",
-      select: "status fullName",
-      populate: {
-        path: "user",
-        select: "fullName email phone"
-      }
-    })
-    .sort({ createdAt: -1 })
-    .lean();
+  };
+
+  const paginateQuery = require("../utils/paginateQuery");
+  const { data: bookings, pagination } = await paginateQuery(Booking, filter, req, {
+    queryModifier: (query) => query
+      .populate("user", "fullName email phone")
+      .populate("car", "name model images")
+      .populate({
+        path: "acceptedDriver",
+        select: "status rating fullName",
+        populate: {
+          path: "user",
+          select: "fullName email phone"
+        }
+      })
+      .populate({
+        path: "driver",
+        select: "status fullName",
+        populate: {
+          path: "user",
+          select: "fullName email phone"
+        }
+      })
+      .sort({ createdAt: -1 }),
+    defaultLimit: 20,
+    maxLimit: 100,
+  });
 
   res.status(200).json({
     status: "success",
-    results: bookings.length,
+    ...pagination,
     data: {
       bookings,
     },

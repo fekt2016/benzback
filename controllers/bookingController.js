@@ -378,10 +378,8 @@ exports.getBooking = catchAsync(async (req, res, next) => {
 });
 
 exports.getAllBooking = catchAsync(async (req, res, next) => {
-  // 1️⃣ Destructure query parameters with defaults
+  const paginateQuery = require("../utils/paginateQuery");
   const {
-    page = 1,
-    limit = 20,
     sort = "-createdAt",
     fields,
     status,
@@ -392,7 +390,7 @@ exports.getAllBooking = catchAsync(async (req, res, next) => {
     include = "user,car,driver"
   } = req.query;
 
-  // 2️⃣ Build MongoDB filter
+  // Build MongoDB filter
   const filter = {};
   if (status) filter.status = { $in: String(status).split(",") };
   if (user) filter.user = user;
@@ -404,49 +402,41 @@ exports.getAllBooking = catchAsync(async (req, res, next) => {
     if (to) filter.createdAt.$lte = new Date(to);
   }
 
-  // 3️⃣ Create query
-  let query = Booking.find(filter);
+  // Build query modifier for populate, select, and sort
+  const queryModifier = (query) => {
+    // Field limiting (select specific fields)
+    if (fields) {
+      const projection = String(fields).split(",").join(" ");
+      query = query.select(projection);
+    }
 
-  // 4️⃣ Field limiting (select specific fields)
-  if (fields) {
-    const projection = String(fields).split(",").join(" ");
-    query = query.select(projection);
-  }
+    // Populate relations (user, car, driver, etc.)
+    const populateFields = String(include)
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean);
 
-  // 5️⃣ Populate relations (user, car, driver, etc.)
-  const populateFields = String(include)
-    .split(",")
-    .map((p) => p.trim())
-    .filter(Boolean);
+    populateFields.forEach((p) => {
+      if (p === "user") query = query.populate("user", "fullName email phone");
+      if (p === "car") query = query.populate("car", "model series licensePlate images pricePerDay");
+      if (p === "driver") query = query.populate("driver", "name verified");
+    });
 
-  populateFields.forEach((p) => {
-    if (p === "user") query = query.populate("user", "fullName email phone");
-    if (p === "car") query = query.populate("car", "model series licensePlate images pricePerDay");
-    if (p === "driver") query = query.populate("driver", "name verified");
+    // Sorting
+    if (sort) {
+      const sortBy = String(sort).split(",").join(" ");
+      query = query.sort(sortBy);
+    }
+
+    return query;
+  };
+
+  // Execute paginated query
+  const { data: bookings, pagination } = await paginateQuery(Booking, filter, req, {
+    queryModifier,
+    defaultLimit: 20,
+    maxLimit: 100,
   });
-
-  // 6️⃣ Sorting
-  if (sort) {
-    const sortBy = String(sort).split(",").join(" ");
-    query = query.sort(sortBy);
-  }
-
-  // 7️⃣ Pagination
-  const numericLimit = String(limit) === "all" ? 0 : Math.max(parseInt(limit, 10) || 20, 0);
-  const numericPage = Math.max(parseInt(page, 10) || 1, 1);
-  const skip = numericLimit > 0 ? (numericPage - 1) * numericLimit : 0;
-
-  if (numericLimit > 0) {
-    query = query.skip(skip).limit(numericLimit);
-  }
-
-  // 8️⃣ Execute query and count total
-  // Use lean() to reduce memory usage (returns plain JS objects instead of Mongoose documents)
-  const [bookings, total] = await Promise.all([
-    query.lean(), // Add lean() for memory efficiency
-    Booking.countDocuments(filter)
-  ]);
-
 
   if (!bookings || bookings.length === 0) {
     return next(new AppError("No bookings found", 404));
@@ -454,10 +444,7 @@ exports.getAllBooking = catchAsync(async (req, res, next) => {
 
   res.status(200).json({
     status: "success",
-    results: bookings.length,
-    total,
-    page: numericLimit > 0 ? numericPage : 1,
-    pages: numericLimit > 0 ? Math.ceil(total / numericLimit) : 1,
+    ...pagination,
     data: bookings
   });
 });

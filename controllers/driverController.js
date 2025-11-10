@@ -291,35 +291,23 @@ exports.getUserDrivers = catchAsync(async (req, res, next) => {
  * Get all drivers (Admin only - supports filtering by driverType)
  */
 exports.getAllDrivers = catchAsync(async (req, res, next) => {
-  // Support filtering by driverType (rental or professional)
-  const { driverType, page = 1, limit = 50 } = req.query;
-  const query = {};
+  const paginateQuery = require("../utils/paginateQuery");
+  const { driverType } = req.query;
   
+  const filter = {};
   if (driverType && (driverType === "rental" || driverType === "professional")) {
-    query.driverType = driverType;
+    filter.driverType = driverType;
   }
   
-  // Add pagination to prevent loading all drivers at once (memory optimization)
-  const skip = (parseInt(page) - 1) * parseInt(limit);
-  const limitNum = Math.min(parseInt(limit) || 50, 100); // Max 100 per page
-  
-  // Execute query with pagination and lean() for memory efficiency
-  const [drivers, total] = await Promise.all([
-    Driver.find(query)
-      .populate("user", "fullName email")
-      .skip(skip)
-      .limit(limitNum)
-      .lean(), // Use lean() to reduce memory usage
-    Driver.countDocuments(query)
-  ]);
+  const { data: drivers, pagination } = await paginateQuery(Driver, filter, req, {
+    queryModifier: (query) => query.populate("user", "fullName email"),
+    defaultLimit: 50,
+    maxLimit: 100,
+  });
   
   res.status(200).json({
     status: "success",
-    results: drivers.length,
-    total,
-    page: parseInt(page),
-    limit: limitNum,
-    totalPages: Math.ceil(total / limitNum),
+    ...pagination,
     data: drivers,
   });
 });

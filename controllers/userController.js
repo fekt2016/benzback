@@ -7,8 +7,8 @@ const crypto = require('crypto')
 
 
 exports.getAllUsers = catchAsync(async (req, res, next) => {
-  // Add pagination to prevent loading all users at once (memory optimization)
-  const { page = 1, limit = 50, role, search } = req.query;
+  const paginateQuery = require("../utils/paginateQuery");
+  const { role, search } = req.query;
   
   const filter = {};
   if (role) filter.role = role;
@@ -20,26 +20,15 @@ exports.getAllUsers = catchAsync(async (req, res, next) => {
     ];
   }
   
-  const skip = (parseInt(page) - 1) * parseInt(limit);
-  const limitNum = Math.min(parseInt(limit) || 50, 100); // Max 100 per page
-  
-  // Execute query with pagination and lean() for memory efficiency
-  const [users, total] = await Promise.all([
-    User.find(filter)
-      .select("-password")
-      .skip(skip)
-      .limit(limitNum)
-      .lean(), // Use lean() to reduce memory usage
-    User.countDocuments(filter)
-  ]);
+  const { data: users, pagination } = await paginateQuery(User, filter, req, {
+    queryModifier: (query) => query.select("-password"),
+    defaultLimit: 50,
+    maxLimit: 100,
+  });
 
   res.status(200).json({
     status: "success",
-    results: users.length,
-    total,
-    page: parseInt(page),
-    limit: limitNum,
-    totalPages: Math.ceil(total / limitNum),
+    ...pagination,
     data: users,
   });
 });
