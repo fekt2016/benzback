@@ -1,325 +1,56 @@
-name: 🚀 Deploy Backend to cPanel
+name: 🚀 Deploy Frontend to VPS
 
 on:
   push:
     branches: [main]
     paths:
-      - "**"
-      - ".github/workflows/deploy.yml"
+      - "frontend/**"
+      - ".github/workflows/deploy-frontend.yml"
   workflow_dispatch:
-
-env:
-  NODE_VERSION: "20"
-  FTP_DIR: "public_html/myapp/"
-  FTP_PORT: "21"
 
 jobs:
   deploy:
-    name: 🌐 Deploy Backend to Production
+    name: 🌐 Deploy Frontend to VPS
     runs-on: ubuntu-latest
-    environment:
-      name: server
-      url: https://benzflex.com
 
     steps:
-      # ========================================
-      # 1️⃣ Checkout Repository
-      # ========================================
+      # 1️⃣ Checkout Code
       - name: 📦 Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
 
-      # ========================================
       # 2️⃣ Setup Node.js
-      # ========================================
       - name: ⚙️ Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: "20"
 
-      # ========================================
-      # 3️⃣ Verify FTP Secrets
-      # ========================================
-      - name: 🔐 Verify FTP Secrets
+      # 3️⃣ Install Dependencies & Build
+      - name: 🏗️ Install and Build Frontend
+        working-directory: frontend
         run: |
-          set -e
-          echo "=========================================="
-          echo "🔐 Verifying FTP Secrets"
-          echo "=========================================="
+          npm ci
+          npm run build
+          echo "✅ Build completed"
 
-          if [ -z "${{ secrets.FTP_SERVER }}" ]; then echo "::error::❌ Missing FTP_SERVER"; exit 1; fi
-          if [ -z "${{ secrets.FTP_USERNAME }}" ]; then echo "::error::❌ Missing FTP_USERNAME"; exit 1; fi
-          if [ -z "${{ secrets.FTP_PASSWORD }}" ]; then echo "::error::❌ Missing FTP_PASSWORD"; exit 1; fi
-
-          echo "✅ All FTP secrets verified successfully"
-          echo "FTP_SERVER=${{ secrets.FTP_SERVER }}" >> $GITHUB_ENV
-          echo "FTP_USERNAME=${{ secrets.FTP_USERNAME }}" >> $GITHUB_ENV
-          echo "FTP_PASSWORD=${{ secrets.FTP_PASSWORD }}" >> $GITHUB_ENV
-          echo "FTP_DIR=${{ env.FTP_DIR }}" >> $GITHUB_ENV
-          echo "FTP_PORT=${{ env.FTP_PORT }}" >> $GITHUB_ENV
-
-      # ========================================
-      # 4️⃣ Show Repository Structure
-      # ========================================
-      - name: 🧭 Show repository structure
-        run: |
-          echo "Current directory: $(pwd)"
-          echo ""
-          ls -la
-          echo ""
-          echo "✅ Confirm your server.js, app.js, and package.json appear above."
-
-      # ========================================
-      # 5️⃣ Clean Up Old Files on Server (Before Deploy)
-      # ========================================
-      - name: 🧹 Clean up old files on FTP server
-        continue-on-error: true
-        env:
-          FTP_SERVER: ${{ secrets.FTP_SERVER }}
-          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
-          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-          FTP_DIR: ${{ env.FTP_DIR }}
-          FTP_PORT: ${{ env.FTP_PORT }}
-        run: |
-          echo "=========================================="
-          echo "🧹 Cleaning up old files on FTP server"
-          echo "=========================================="
-          echo ""
-          echo "Installing basic-ftp for cleanup..."
-          npm install -g basic-ftp
-          
-          node << 'EOF'
-          const { Client } = require('basic-ftp');
-          const client = new Client();
-          
-          async function cleanup() {
-            try {
-              await client.access({
-                host: process.env.FTP_SERVER,
-                user: process.env.FTP_USERNAME,
-                password: process.env.FTP_PASSWORD,
-                port: parseInt(process.env.FTP_PORT || '21'),
-              });
-              
-              const targetDir = process.env.FTP_DIR.replace(/\/$/, '');
-              console.log(`📂 Connected to FTP server`);
-              console.log(`📂 Target directory: ${targetDir}`);
-              
-              // List of files/folders to delete
-              const itemsToDelete = [
-                'node_modules',
-                'logs',
-                'tmp',
-                'temp',
-                '*.log',
-                '*.zip',
-                '*.tar.gz',
-                '*.bak',
-                'deployment',
-                'production-archive',
-                'production-package',
-              ];
-              
-              let deletedCount = 0;
-              
-              try {
-                await client.cd(targetDir);
-                const list = await client.list();
-                
-                for (const item of list) {
-                  const name = item.name;
-                  const isDir = item.isDirectory;
-                  
-                  // Check if item should be deleted
-                  const shouldDelete = itemsToDelete.some(pattern => {
-                    if (pattern.includes('*')) {
-                      const regex = new RegExp(pattern.replace('*', '.*'));
-                      return regex.test(name);
-                    }
-                    return name === pattern;
-                  });
-                  
-                  if (shouldDelete) {
-                    try {
-                      if (isDir) {
-                        await client.removeDir(name);
-                        console.log(`✅ Deleted directory: ${name}`);
-                      } else {
-                        await client.remove(name);
-                        console.log(`✅ Deleted file: ${name}`);
-                      }
-                      deletedCount++;
-                    } catch (err) {
-                      console.log(`⚠️  Could not delete ${name}: ${err.message}`);
-                    }
-                  }
-                }
-              } catch (err) {
-                console.log(`⚠️  Could not list directory: ${err.message}`);
-              }
-              
-              console.log(`\n✅ Cleanup complete. Deleted ${deletedCount} items.`);
-              await client.close();
-            } catch (error) {
-              console.log(`⚠️  Cleanup failed (non-critical): ${error.message}`);
-              console.log(`⚠️  Continuing with deployment...`);
-            }
-          }
-          
-          cleanup();
-          EOF
-          
-          echo ""
-          echo "=========================================="
-
-      # ========================================
-      # 6️⃣ Prepare Deployment Package (Minimal)
-      # ========================================
-      - name: 🧹 Prepare minimal deployment package
-        run: |
-          echo "=========================================="
-          echo "📦 Creating minimal deployment package"
-          echo "=========================================="
-          echo ""
-          rm -rf deployment && mkdir deployment
-
-          # Only include essential files
-          rsync -av \
-            --exclude='node_modules' \
-            --exclude='.git' \
-            --exclude='.github' \
-            --exclude='*.env' \
-            --exclude='.env*' \
-            --exclude='config.env' \
-            --exclude='logs' \
-            --exclude='tmp' \
-            --exclude='temp' \
-            --exclude='tests' \
-            --exclude='test' \
-            --exclude='*.test.js' \
-            --exclude='*.spec.js' \
-            --exclude='*.log' \
-            --exclude='*.md' \
-            --exclude='**/*.md' \
-            --exclude='scripts' \
-            --exclude='coverage' \
-            --exclude='.nyc_output' \
-            --exclude='.DS_Store' \
-            --exclude='*.swp' \
-            --exclude='*.swo' \
-            --exclude='.vscode' \
-            --exclude='.idea' \
-            --exclude='*.zip' \
-            --exclude='*.tar.gz' \
-            --exclude='deployment' \
-            --exclude='production-archive' \
-            --exclude='production-package' \
-            ./ ./deployment/
-
-          # Include start.sh
-          if [ -f "start.sh" ]; then
-            cp start.sh deployment/start.sh
-            chmod +x deployment/start.sh
-            echo "✅ start.sh included"
-          else
-            echo "::warning::⚠️ start.sh not found in root folder"
-          fi
-
-          echo ""
-          echo "📦 Deployment package size:"
-          du -sh deployment | cut -f1
-          echo ""
-          echo "📊 Package contents:"
-          find deployment -type f | wc -l | xargs echo "   Files:"
-          find deployment -type d | wc -l | xargs echo "   Directories:"
-          echo ""
-          echo "=========================================="
-
-      # ========================================
-      # 7️⃣ Deploy via FTP
-      # ========================================
-      - name: 📤 Deploy to cPanel
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+      # 4️⃣ Deploy via SSH
+      - name: 📤 Deploy to VPS via SSH
+        uses: appleboy/scp-action@v0.1.7
         with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          port: ${{ env.FTP_PORT }}
-          local-dir: deployment/
-          server-dir: ${{ env.FTP_DIR }}
-          log-level: verbose
-          timeout: 120000
-          dangerous-clean-slate: false
-          exclude: |
-            node_modules/**
-            .git/**
-            .github/**
-            logs/**
-            tmp/**
-            tests/**
-            *.env
-            *.log
-            *.md
-            scripts/**
-            .DS_Store
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          # If you prefer SSH key auth:
+          # key: ${{ secrets.VPS_SSH_KEY }}
+          source: "frontend/dist/*"
+          target: "${{ secrets.VPS_PATH }}"
 
-      # ========================================
-      # 8️⃣ Deployment Summary
-      # ========================================
-      - name: 📋 Deployment Summary
-        if: success()
-        run: |
-          echo "=========================================="
-          echo "🎉 DEPLOYMENT COMPLETED SUCCESSFULLY!"
-          echo "=========================================="
-          echo "📂 Uploaded to: ${{ env.FTP_DIR }}"
-          echo "🌐 Live URL: https://benzflex.com"
-          echo ""
-          echo "✅ POST-DEPLOYMENT CHECKLIST:"
-          echo "1. Log in to cPanel → Node.js App → Restart"
-          echo "2. Set Application Root to: myapp"
-          echo "3. Set Startup File to: start.sh"
-          echo "4. Permissions: start.sh → 755"
-          echo "5. Environment Variables: Add STRIPE, CLOUDINARY, SENDGRID, etc."
-          echo "6. Restart App and check log"
-          echo ""
-
-      # ========================================
-      # 9️⃣ Error Analysis (552 Disk Full)
-      # ========================================
-      - name: ❌ Error Analysis
-        if: failure()
-        run: |
-          echo "=========================================="
-          echo "❌ DEPLOYMENT FAILED - ERROR 552 (Disk Full)"
-          echo "=========================================="
-          echo ""
-          echo "🔴 CRITICAL: Server disk is full!"
-          echo ""
-          echo "🔍 Immediate Actions Required:"
-          echo ""
-          echo "1️⃣  MANUAL CLEANUP (via cPanel File Manager):"
-          echo "   • Go to: cPanel → File Manager → ${{ env.FTP_DIR }}"
-          echo "   • Delete these folders/files:"
-          echo "     - node_modules/ (if exists)"
-          echo "     - logs/ (if exists)"
-          echo "     - tmp/ or temp/ (if exists)"
-          echo "     - *.log files"
-          echo "     - *.zip, *.tar.gz files"
-          echo "     - deployment/ folder (old deployments)"
-          echo ""
-          echo "2️⃣  CHECK DISK USAGE:"
-          echo "   • Go to: cPanel → Disk Usage"
-          echo "   • Identify large files/folders"
-          echo "   • Delete unnecessary files"
-          echo ""
-          echo "3️⃣  RETRY DEPLOYMENT:"
-          echo "   • After cleanup, go to: GitHub → Actions"
-          echo "   • Click 'Re-run all jobs' on the failed workflow"
-          echo ""
-          echo "4️⃣  PREVENT FUTURE ISSUES:"
-          echo "   • The workflow now auto-cleans old files before deploy"
-          echo "   • Consider upgrading hosting plan if disk is consistently full"
-          echo ""
-          echo "=========================================="
+      # 5️⃣ Restart Nginx (optional)
+      - name: 🔁 Restart Nginx
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          script: |
+            systemctl restart nginx
+            echo "✅ Nginx restarted successfully"
