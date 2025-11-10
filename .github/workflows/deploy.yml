@@ -37,7 +37,39 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
 
       # ========================================
-      # 3️⃣ Verify FTP Secrets
+      # 3️⃣ Debug FTP Secrets (Show Real Values)
+      # ========================================
+      - name: 🔍 Debug FTP Secrets (Show Real Values)
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          echo "=========================================="
+          echo "🔍 FTP SECRETS - REAL VALUES (for debugging)"
+          echo "=========================================="
+          echo ""
+          echo "📡 FTP_SERVER (real value):"
+          echo "   $FTP_SERVER"
+          echo ""
+          echo "👤 FTP_USERNAME (real value):"
+          echo "   $FTP_USERNAME"
+          echo ""
+          echo "🔑 FTP_PASSWORD (real value):"
+          echo "   $FTP_PASSWORD"
+          echo ""
+          echo "📂 FTP_DIR (from env):"
+          echo "   ${{ env.FTP_DIR }}"
+          echo ""
+          echo "🔌 FTP_PORT (from env):"
+          echo "   ${{ env.FTP_PORT }}"
+          echo ""
+          echo "=========================================="
+          echo "✅ These are the ACTUAL values that will be used for FTP deployment"
+          echo "=========================================="
+
+      # ========================================
+      # 4️⃣ Verify FTP Secrets
       # ========================================
       - name: 🔐 Verify FTP Secrets
         run: |
