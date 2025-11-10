@@ -10,7 +10,7 @@ on:
 
 env:
   NODE_VERSION: "20"
-  FTP_DIR: "public_html/myapp"
+  FTP_DIR: "public_html/myapp/"
   FTP_PORT: "21"
 
 jobs:
