@@ -172,7 +172,7 @@ jobs:
           FTP_USERNAME: turtlvhi
           FTP_PASSWORD: America@1234567890
           port: ${{ env.FTP_PORT }}
-          local-dir: backend/deployment/
+          local-dir: /deployment/
           server-dir: ${{ env.FTP_DIR }}
           exclude: |
             node_modules/**
