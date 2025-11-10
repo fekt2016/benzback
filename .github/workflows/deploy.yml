@@ -147,7 +147,7 @@ jobs:
           echo "3. Set Startup File to: start.sh"
           echo "4. Permissions: start.sh → 755"
           echo "5. Environment Variables: Add STRIPE, CLOUDINARY, SENDGRID, etc."
-          echo "6. Restart App and check logs"
+          echo "6. Restart App and check log"
           echo ""
 
       # ========================================
