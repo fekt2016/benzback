@@ -1,251 +1,166 @@
-name: Deploy Backend to cPanel
+name: 🚀 Deploy Backend to cPanel
 
 on:
   push:
     branches: [main]
     paths:
-      - 'backend/**'
-      - '.github/workflows/deploy.yml'
+      - "backend/**"
+      - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
 env:
   NODE_VERSION: "20"
-  FTP_DIR: "public_html/myapp/"
+  FTP_DIR: "public_html/myapp"
   FTP_PORT: "21"
 
 jobs:
   deploy:
-    name: Deploy to Production
+    name: 🌐 Deploy Backend to Production
     runs-on: ubuntu-latest
     environment:
       name: production
       url: https://benzflex.com
 
     steps:
-      - name: Checkout code
+      # ========================================
+      # 1️⃣ Checkout Repository
+      # ========================================
+      - name: 📦 Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
 
-      - name: Setup Node.js
+      # ========================================
+      # 2️⃣ Setup Node.js
+      # ========================================
+      - name: ⚙️ Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: ""
 
-      - name: Debug FTP Secrets (Preview)
-        env:
-          FTP_SERVER: ftp.benzflex.com
-          FTP_USERNAME: turtlvhi
-          FTP_PASSWORD: America@1234567890
-        run: |
-          echo "=========================================="
-          echo "🔍 Debug: FTP Secrets Preview (Before Verification)"
-          echo "=========================================="
-          echo ""
-          if [ -z "$FTP_SERVER" ]; then
-            echo "❌ FTP_SERVER: NOT SET or EMPTY"
-          else
-            SERVER_LEN=${#FTP_SERVER}
-            echo "✅ FTP_SERVER: Set"
-            echo "   Length: $SERVER_LEN characters"
-            echo "   Preview: ${FTP_SERVER:0:15}..."
-            echo "   Full value: $FTP_SERVER"
-          fi
-          echo ""
-          if [ -z "$FTP_USERNAME" ]; then
-            echo "❌ FTP_USERNAME: NOT SET or EMPTY"
-          else
-            USERNAME_LEN=${#FTP_USERNAME}
-            echo "✅ FTP_USERNAME: Set"
-            echo "   Length: $USERNAME_LEN characters"
-            echo "   Preview: ${FTP_USERNAME:0:10}..."
-            echo "   Full value: $FTP_USERNAME"
-          fi
-          echo ""
-          if [ -z "$FTP_PASSWORD" ]; then
-            echo "❌ FTP_PASSWORD: NOT SET or EMPTY"
-          else
-            PASSWORD_LEN=${#FTP_PASSWORD}
-            echo "✅ FTP_PASSWORD: Set"
-            echo "   Length: $PASSWORD_LEN characters"
-            echo "   Preview: ${FTP_PASSWORD:0:5}*** (first 5 chars shown)"
-            echo "   Full value: $FTP_PASSWORD"
-          fi
-          echo ""
-          echo "=========================================="
-          echo ""
-
-      - name: Verify FTP Secrets
-        id: verify-secrets
-        env:
-          FTP_SERVER: ftp.benzflex.com
-          FTP_USERNAME: turtlvhi
-          FTP_PASSWORD: America@1234567890
+      # ========================================
+      # 3️⃣ Verify FTP Secrets
+      # ========================================
+      - name: 🔐 Verify FTP Secrets
         run: |
           set -e
-          echo "=========================================="
-          echo "🔐 Verifying FTP Secrets"
-          echo "=========================================="
-          
-          # Check each secret individually with detailed error messages
-          MISSING_SECRETS=0
-          
-          if [ -z "$FTP_SERVER" ]; then
-            echo "::error::❌ FTP_SERVER secret is missing or empty!"
-            MISSING_SECRETS=$((MISSING_SECRETS + 1))
-          else
-            SERVER_LEN=${#FTP_SERVER}
-            echo "✅ FTP_SERVER: Set (length: $SERVER_LEN chars)"
-            # Show first few characters for verification (safe - doesn't expose full value)
-            echo "   Preview: ${FTP_SERVER:0:10}..."
-          fi
-          
-          if [ -z "$FTP_USERNAME" ]; then
-            echo "::error::❌ FTP_USERNAME secret is missing or empty!"
-            MISSING_SECRETS=$((MISSING_SECRETS + 1))
-          else
-            USERNAME_LEN=${#FTP_USERNAME}
-            echo "✅ FTP_USERNAME: Set (length: $USERNAME_LEN chars)"
-            echo "   Preview: ${FTP_USERNAME:0:5}..."
-          fi
-          
-          if [ -z "$FTP_PASSWORD" ]; then
-            echo "::error::❌ FTP_PASSWORD secret is missing or empty!"
-            MISSING_SECRETS=$((MISSING_SECRETS + 1))
-          else
-            PASSWORD_LEN=${#FTP_PASSWORD}
-            echo "✅ FTP_PASSWORD: Set (length: $PASSWORD_LEN chars)"
-            echo "   Preview: *** (hidden for security)"
-          fi
-          
-          echo "=========================================="
-          
-          if [ $MISSING_SECRETS -gt 0 ]; then
-            echo "::error::❌ Missing $MISSING_SECRETS required FTP secret(s)!"
-            echo ""
-            echo "📋 TROUBLESHOOTING GUIDE:"
-            echo "1. Go to: Repository → Settings → Secrets and variables → Actions"
-            echo "2. Verify these secrets exist:"
-            echo "   - FTP_SERVER (e.g., ftp.yourdomain.com)"
-            echo "   - FTP_USERNAME (your FTP username)"
-            echo "   - FTP_PASSWORD (your FTP password)"
-            echo "3. If using environment protection:"
-            echo "   - Check: Settings → Environments → production → Secrets"
-            echo "   - Ensure secrets are added to the 'production' environment"
-            echo "4. After adding secrets, re-run this workflow"
-            echo ""
-            exit 1
-          fi
-          
-          # Set environment variables for use in subsequent steps
-          echo "FTP_SERVER=$FTP_SERVER" >> $GITHUB_ENV
-          echo "FTP_USERNAME=$FTP_USERNAME" >> $GITHUB_ENV
-          echo "FTP_PASSWORD=$FTP_PASSWORD" >> $GITHUB_ENV
+          echo "Verifying FTP secrets..."
+
+          if [ -z "${{ secrets.FTP_SERVER }}" ]; then echo "::error::Missing FTP_SERVER"; exit 1; fi
+          if [ -z "${{ secrets.FTP_USERNAME }}" ]; then echo "::error::Missing FTP_USERNAME"; exit 1; fi
+          if [ -z "${{ secrets.FTP_PASSWORD }}" ]; then echo "::error::Missing FTP_PASSWORD"; exit 1; fi
+
+          echo "✅ FTP secrets verified"
+          echo "FTP_SERVER=${{ secrets.FTP_SERVER }}" >> $GITHUB_ENV
+          echo "FTP_USERNAME=${{ secrets.FTP_USERNAME }}" >> $GITHUB_ENV
+          echo "FTP_PASSWORD=${{ secrets.FTP_PASSWORD }}" >> $GITHUB_ENV
           echo "FTP_DIR=${{ env.FTP_DIR }}" >> $GITHUB_ENV
           echo "FTP_PORT=${{ env.FTP_PORT }}" >> $GITHUB_ENV
-          
-          echo "✅ All FTP secrets verified and set as environment variables"
-          echo "=========================================="
 
-      - name: Prepare deployment package
+      # ========================================
+      # 4️⃣ Install Dependencies (Optional)
+      # ========================================
+      - name: 📦 Install dependencies
         working-directory: backend
         run: |
-          set -e
-          echo "Preparing minimal deployment package..."
-          rm -rf deployment && mkdir -p deployment
-          rsync -av --exclude='node_modules' --exclude='.git' --exclude='.github' --exclude='test' --exclude='tests' --exclude='*.test.js' --exclude='*.spec.js' --exclude='logs' --exclude='*.log' --exclude='*.md' --exclude='**/*.md' --exclude='config.env' --exclude='*.env' --exclude='.env*' --exclude='tmp' --exclude='temp' --exclude='deployment' --exclude='production-archive' --exclude='production-package' --exclude='test-*.js' --exclude='quick-*.js' --exclude='monitor-*.js' --exclude='run-*.js' --exclude='check-*.js' --exclude='analyze-*.js' --exclude='cpanel-diagnose.sh' --exclude='create-production-archive.sh' --exclude='*.zip' --exclude='*.tar.gz' --exclude='.gitignore' --exclude='.DS_Store' --exclude='*.swp' --exclude='*.swo' --exclude='.vscode' --exclude='.idea' --exclude='coverage' --exclude='.nyc_output' --exclude='scripts' ./ ./deployment/
-          cp start.sh deployment/start.sh && chmod +x deployment/start.sh
-          echo "📦 Deployment package size: $(du -sh deployment | cut -f1)"
-          echo "✅ Critical files verified"
+          echo "Installing production dependencies..."
+          npm install --production --legacy-peer-deps
 
-      - name: Deploy via FTP
-        id: ftp-deploy
+      # ========================================
+      # 5️⃣ Prepare Deployment Package
+      # ========================================
+      - name: 🧹 Prepare deployment package
+        working-directory: backend
+        run: |
+          echo "Creating deployment package..."
+          rm -rf deployment && mkdir deployment
+
+          rsync -av \
+            --exclude='node_modules' \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='*.env' \
+            --exclude='logs' \
+            --exclude='tmp' \
+            --exclude='tests' \
+            --exclude='*.log' \
+            --exclude='*.md' \
+            ./ ./deployment/
+
+          # Ensure start.sh is included
+          if [ -f "start.sh" ]; then
+            cp start.sh deployment/start.sh
+            chmod +x deployment/start.sh
+          fi
+
+          echo "📦 Deployment package ready:"
+          du -sh deployment | cut -f1
+
+      # ========================================
+      # 6️⃣ Deploy via FTP
+      # ========================================
+      - name: 📤 Deploy to cPanel
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        env:
-          # Pass secrets directly to the action (more reliable than env vars)
-          FTP_SERVER: ftp.benzflex.com
-          FTP_USERNAME: turtlvhi
-          FTP_PASSWORD: America@1234567890
         with:
-          FTP_SERVER: ftp.benzflex.com
-          FTP_USERNAME: turtlvhi
-          FTP_PASSWORD: America@1234567890
+          server: ${{ env.FTP_SERVER }}
+          username: ${{ env.FTP_USERNAME }}
+          password: ${{ env.FTP_PASSWORD }}
           port: ${{ env.FTP_PORT }}
           local-dir: backend/deployment/
           server-dir: ${{ env.FTP_DIR }}
+          log-level: verbose
+          timeout: 120000
+          dangerous-clean-slate: false
           exclude: |
             node_modules/**
             .git/**
             .github/**
-            test/**
-            tests/**
-            *.test.js
-            *.spec.js
             logs/**
+            tmp/**
+            tests/**
+            *.env
             *.log
             *.md
-            **/*.md
-            config.env
-            *.env
-            .env*
-            tmp/**
-            temp/**
-            deployment/**
-            production-archive/**
-            production-package/**
-            test-*.js
-            quick-*.js
-            monitor-*.js
-            run-*.js
-            check-*.js
-            analyze-*.js
-            cpanel-diagnose.sh
-            create-production-archive.sh
-            *.zip
-            *.tar.gz
-            .gitignore
-            .DS_Store
             scripts/**
-          dangerous-clean-slate: false
-          log-level: verbose
-          timeout: 120000
-          dry-run: false
+            .DS_Store
 
-      - name: Deployment Summary
+      # ========================================
+      # 7️⃣ Deployment Summary
+      # ========================================
+      - name: 📋 Deployment Summary
         if: success()
         run: |
+          echo "=========================================="
           echo "🎉 DEPLOYMENT COMPLETED SUCCESSFULLY!"
-          echo "🌐 Application deployed to: ${{ env.FTP_DIR }}"
-          echo "🔗 Live URL: https://benzflex.com"
-          echo "📋 POST-DEPLOYMENT CHECKLIST:"
-          echo "1. Install Dependencies (on server): cd ${{ env.FTP_DIR }} && npm install --production --legacy-peer-deps"
-          echo "2. Set Environment Variables (in cPanel)"
-          echo "3. Set Startup File (in cPanel): start.sh"
-          echo "4. Set File Permissions (in cPanel File Manager): start.sh to 755"
-          echo "5. Restart Node.js App"
-          echo "6. Verify Deployment: Check logs for 'Memory limit is correctly set' and 'Server running'"
+          echo "=========================================="
+          echo "📂 Uploaded to: ${{ env.FTP_DIR }}"
+          echo "🌐 Live URL: https://benzflex.com"
+          echo ""
+          echo "✅ POST-DEPLOYMENT CHECKLIST:"
+          echo "1. Log in to cPanel → Node.js App → Restart"
+          echo "2. Set Application Root to: myapp"
+          echo "3. Set Startup File to: start.sh"
+          echo "4. Permissions: start.sh → 755"
+          echo "5. Environment Variables: Add STRIPE, CLOUDINARY, SENDGRID, etc."
+          echo "6. Restart App and check logs"
+          echo ""
 
-      - name: Error Analysis
-        if: always()
+      # ========================================
+      # 8️⃣ Error Analysis
+      # ========================================
+      - name: ❌ Error Analysis
+        if: failure()
         run: |
-          echo "🔍 DEPLOYMENT STATUS ANALYSIS"
-          echo "📊 Step Status:"
-          echo "  Deploy via FTP: ${{ steps.ftp-deploy.outcome }}"
-          if [ "${{ job.status }}" != "success" ]; then
-            echo "❌ DEPLOYMENT FAILED"
-            if [ "${{ steps.ftp-deploy.outcome }}" == "failure" ]; then
-              echo "❌ FAILED: Deploy via FTP"
-              echo "🔴 CHECK FOR DISK FULL ERROR (552) IN LOGS ABOVE"
-              echo "IMMEDIATE ACTIONS REQUIRED:"
-              echo "1. Clean up server disk space: Delete logs/, tmp/, node_modules/, old archives in ${{ env.FTP_DIR }}"
-              echo "2. Check disk usage: cPanel → Disk Usage"
-              echo "3. After cleanup, retry deployment: GitHub Actions → Re-run workflow"
-              echo "Other common causes: FTP connection refused, Authentication failed, Directory not found, Network timeout"
-            else
-              echo "❌ FAILED: Earlier step (Setup/Preparation)"
-              echo "Check logs above to identify the failing step"
-            fi
-          else
-            echo "✅ All steps completed successfully!"
-          fi
+          echo "=========================================="
+          echo "❌ DEPLOYMENT FAILED"
+          echo "=========================================="
+          echo ""
+          echo "🔍 Possible Issues:"
+          echo "• Missing FTP secrets (check repo settings)"
+          echo "• Disk full (error 552)"
+          echo "• Wrong directory path (${{ env.FTP_DIR }})"
+          echo "• FTP timeout or invalid credentials"
+          echo ""
+          echo "🧰 Fix Steps:"
+          echo "1. Check GitHub → Settings → Secrets → Actions"
+          echo "2. Clean up cPanel space (delete old logs/tmp/node_modules)"
+          echo "3. Retry: GitHub Actions → Re-run workflow"
+          echo ""
