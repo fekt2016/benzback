@@ -4,16 +4,15 @@
 # 
 # IMPORTANT: In cPanel Node.js App settings:
 # 1. Set "Startup File" to: start.sh
-# 2. Add environment variable: NODE_OPTIONS=--max-old-space-size=2048 --expose-gc
+# 2. Add environment variable: NODE_OPTIONS=--max-old-space-size=512 --expose-gc
 
 # Get the directory where this script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"
 
-# Set Node.js memory options (2GB - CloudLinux LVE limit is 4GB, need significant headroom for WebAssembly)
-# WebAssembly (undici) allocates memory OUTSIDE the V8 heap, so we must use less heap to leave room
-# CloudLinux LVE "Max resident set" is 4GB, so we use 2GB heap to leave 2GB for WebAssembly/system
-export NODE_OPTIONS="--max-old-space-size=2048 --expose-gc"
+# Set Node.js memory options (512MB - Low memory configuration)
+# WebAssembly (undici) allocates memory OUTSIDE the V8 heap, so we use minimal heap
+export NODE_OPTIONS="--max-old-space-size=512 --expose-gc"
 
 # Set production environment
 export NODE_ENV=production
@@ -41,14 +40,14 @@ fi
 # Try multiple methods to ensure memory flags are applied
 if command -v node &> /dev/null; then
   # Method 1: Use node from PATH with explicit flags
-  # Use 2GB heap to leave 2GB for WebAssembly (undici) and system overhead
-  exec node --max-old-space-size=2048 --expose-gc "$SCRIPT_DIR/server.js"
+  # Use 512MB heap for low memory configuration
+  exec node --max-old-space-size=512 --expose-gc "$SCRIPT_DIR/server.js"
 else
   # Method 2: Try common node locations
   if [ -f "/usr/bin/node" ]; then
-    exec /usr/bin/node --max-old-space-size=2048 --expose-gc "$SCRIPT_DIR/server.js"
+    exec /usr/bin/node --max-old-space-size=512 --expose-gc "$SCRIPT_DIR/server.js"
   elif [ -f "/usr/local/bin/node" ]; then
-    exec /usr/local/bin/node --max-old-space-size=2048 --expose-gc "$SCRIPT_DIR/server.js"
+    exec /usr/local/bin/node --max-old-space-size=512 --expose-gc "$SCRIPT_DIR/server.js"
   else
     echo "❌ ERROR: Node.js not found"
     exit 1

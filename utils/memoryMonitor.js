@@ -57,14 +57,14 @@ function formatMemoryStats(stats) {
  * MEMORY OPTIMIZATION: Uses minimal memory, logs only when threshold is exceeded
  * @param {object} options - Monitoring options
  * @param {number} options.intervalMs - Monitoring interval in milliseconds (default: 600000 = 10 minutes)
- * @param {number} options.heapThresholdMB - Heap usage threshold in MB to trigger warning (default: 1500)
+ * @param {number} options.heapThresholdMB - Heap usage threshold in MB to trigger warning (default: 400)
  * @param {boolean} options.logAlways - Whether to log even when below threshold (default: false)
  * @returns {NodeJS.Timeout} Interval ID for cleanup
  */
 function startMemoryMonitoring(options = {}) {
   const {
     intervalMs = 600000, // 10 minutes default
-    heapThresholdMB = 1500, // 1.5GB threshold
+    heapThresholdMB = 400, // 400MB threshold (75% of 512MB limit)
     logAlways = false,
   } = options;
 

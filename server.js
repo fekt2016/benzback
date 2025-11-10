@@ -12,10 +12,10 @@ const v8 = require('v8');
 const heapLimit = v8.getHeapStatistics().heap_size_limit / 1024 / 1024;
 
 // Log Node.js options for debugging (especially important for cPanel)
-// Reduced to 1.5GB minimum to leave room for WebAssembly (undici) which allocates outside V8 heap
-const MIN_REQUIRED_MEMORY = 1536; // Minimum 1.5GB required (leaves 2.5GB for WebAssembly/system)
-const MAX_EXPECTED_MEMORY = 2560; // 2.5GB - if above this, flags likely not applied
-const TARGET_MEMORY = 2048; // 2GB target
+// Low memory configuration: 512MB heap
+const MIN_REQUIRED_MEMORY = 400; // Minimum 400MB required
+const MAX_EXPECTED_MEMORY = 640; // 640MB - if above this, flags likely not applied
+const TARGET_MEMORY = 512; // 512MB target
 
 console.log(`📋 Node.js version: ${process.version}`);
 console.log(`📋 Current max memory: ${heapLimit.toFixed(2)}MB`);
@@ -34,17 +34,17 @@ if (process.env.NODE_OPTIONS) {
 }
 
 // MEMORY OPTIMIZATION: Check if memory flags are not applied (heap too high)
-// Expected heap limit should be ~2048MB (2GB), but default Node.js gives ~4GB
+// Expected heap limit should be ~512MB, but default Node.js gives ~4GB
 if (heapLimit > MAX_EXPECTED_MEMORY) {
   console.error(`\n❌ CRITICAL: Memory flags NOT applied!`);
   console.error(`❌ Current memory limit: ${heapLimit.toFixed(2)}MB (too high!)`);
-  console.error(`❌ Expected limit: ~${TARGET_MEMORY}MB (2GB)`);
+  console.error(`❌ Expected limit: ~${TARGET_MEMORY}MB (512MB)`);
   console.error(`❌ This indicates Node.js memory flags are NOT being used!`);
   console.error(`\n🔧 IMMEDIATE FIX REQUIRED:`);
   console.error(`1. In cPanel → Node.js App → Set "Startup File" to: start.sh`);
-  console.error(`2. Verify environment variable exists: NODE_OPTIONS=--max-old-space-size=2048 --expose-gc`);
+  console.error(`2. Verify environment variable exists: NODE_OPTIONS=--max-old-space-size=512 --expose-gc`);
   console.error(`3. RESTART your app (memory flags only apply on startup)`);
-  console.error(`4. After restart, you should see: "Current max memory: ~2048.00MB"`);
+  console.error(`4. After restart, you should see: "Current max memory: ~512.00MB"`);
   console.error(`\n💡 Note: start.sh sets memory flags directly, so NODE_OPTIONS env var may not be set, but memory flags still work.\n`);
   
   // Don't exit in development, but warn heavily
@@ -145,7 +145,7 @@ const startServer = async () => {
       // This reduces log noise and memory overhead from frequent monitoring
       memoryMonitorInterval = startMemoryMonitoring({
         intervalMs: 600000, // 10 minutes (reduced from 1 minute to save CPU/memory)
-        heapThresholdMB: 1500, // 1.5GB threshold (75% of 2GB limit)
+        heapThresholdMB: 400, // 400MB threshold (75% of 512MB limit)
         logAlways: false, // Only log when threshold exceeded
       });
       console.log("✅ Memory monitoring started (logs every 10 minutes or when threshold exceeded)");
