@@ -82,4 +82,4 @@ jobs:
           echo "FTP_USERNAME=${{ secrets.FTP_USERNAME }}" >> $GITHUB_ENV
           echo "FTP_PASSWORD=${{ secrets.FTP_PASSWORD }}" >> $GITHUB_ENV
           echo "FTP_DIR=${{ env.FTP_DIR }}" >> $GITHUB_ENV
-          echo "FTP_PO_
+          echo "FTP_PO
