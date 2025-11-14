@@ -22,7 +22,7 @@ const authRouter = require("./routes/authRoutes");
 const carRouter = require("./routes/carRoutes");
 const notificationRouter = require("./routes/notificationRoutes");
 const driverRouter = require("./routes/driverRoutes");
-const driverProfileRouter = require("./routes/driverProfileRoutes");
+// const driverProfileRouter = require("./routes/driverProfileRoutes");
 const professionalDriverRouter = require("./routes/professionalDriverRoutes");
 const bookingRouter = require("./routes/bookingRoutes");
 const paymentRouter = require("./routes/paymentRoutes");
@@ -32,6 +32,7 @@ const couponRouter = require("./routes/couponRoutes");
 const chatRouter = require("./routes/chatRoutes");
 const activityRouter = require("./routes/activityRoutes");
 const debugRouter = require("./routes/debugRoutes");
+const adminRouter = require("./routes/adminRoutes");
 
 const app = express();
 
@@ -274,7 +275,7 @@ app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/cars", carRouter);
 app.use("/api/v1/notifications", notificationRouter);
 app.use("/api/v1/drivers", driverRouter);
-app.use("/api/v1/driver", driverProfileRouter);
+// app.use("/api/v1/driver", driverProfileRouter);
 app.use("/api/v1/professional-drivers", professionalDriverRouter);
 app.use("/api/v1/bookings", bookingRouter);
 app.use("/api/v1/payment", paymentRouter);
@@ -283,6 +284,7 @@ app.use("/api/v1/users", userRouter);
 app.use("/api/v1/coupons", couponRouter);
 app.use("/api/v1/chat", chatRouter);
 app.use("/api/v1/activity", activityRouter);
+app.use("/api/v1/admin", adminRouter);
 app.use("/api/v1/debug", debugRouter);
 
 /* =========================

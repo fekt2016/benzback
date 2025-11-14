@@ -34,6 +34,13 @@ router.route("/").get(authController.protect, authController.restrictTo("admin")
   bookingController.createBooking
 );
 
+// Hourly booking route
+router.post(
+  "/hourly",
+  authController.restrictTo("user", "admin"),
+  bookingController.createHourlyBooking
+);
+
 router.patch(
   "/cancel/:id",
   authController.restrictTo("user", "admin"),

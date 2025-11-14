@@ -1,28 +1,13 @@
 const mongoose = require("mongoose");
 
-/**
- * Driver Model
- * Unified model for both rental drivers (customer's own drivers) and professional drivers (chauffeurs)
- * 
- * - Rental drivers: Added by customers for their own use
- * - Professional drivers: Created automatically during signup when user selects driver role
- * 
- * Bidirectional link with User model:
- * - driver.user = user._id (required)
- * - user.driver = driver._id (set during signup for professional drivers)
- */
+
 const driverSubSchema = new mongoose.Schema(
   {
     name: { type: String }, // driver's name (for rental drivers)
     user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     isDefault: { type: Boolean, default: false },
 
-    // Driver type: "rental" for customer's own drivers, "professional" for chauffeurs
-    driverType: {
-      type: String,
-      enum: ["rental", "professional"],
-      default: "rental",
-    },
+
 
     // Additional fields for professional drivers (populated from User during signup)
     fullName: { type: String, trim: true },
@@ -61,6 +46,49 @@ const driverSubSchema = new mongoose.Schema(
       ref: "Booking",
       default: null,
     },
+    
+    // Real-time location tracking for marketplace
+    location: {
+      lat: {
+        type: Number,
+        min: -90,
+        max: 90,
+      },
+      lng: {
+        type: Number,
+        min: -180,
+        max: 180,
+      },
+      lastUpdated: {
+        type: Date,
+        default: Date.now,
+      },
+      // Socket.io connection tracking
+      socketId: {
+        type: String,
+        default: null,
+      },
+    },
+    
+    // Single car reference (one-driver-one-car rule)
+    car: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Car",
+      default: null,
+    },
+    
+    // Hourly rate (can be overridden by car's hourlyRate)
+    hourlyRate: { 
+      type: Number, 
+      min: 0,
+      default: null,
+    },
+    
+    // Availability flag
+    available: {
+      type: Boolean,
+      default: false,
+    },
 
     license: {
       number: { type: String },
@@ -93,9 +121,8 @@ const driverSubSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Index for efficient queries by driver type
-// driverSubSchema.index({ driverType: 1 });
-// driverSubSchema.index({ user: 1, driverType: 1 });
+
+
 
 /** Utilities **/
 function bothVerified(doc) {
@@ -128,10 +155,6 @@ driverSubSchema.pre("save", function (next) {
   next();
 });
 
-/**
- * For atomic updates (findOneAndUpdate / findByIdAndUpdate):
- * We compute AFTER the db update so we can see the final state.
- */
 driverSubSchema.post("findOneAndUpdate", async function (doc) {
   if (!doc) return;
 

@@ -28,6 +28,27 @@ const calculateBookingDetails = (pickupDate, returnDate, pricePerDay) => {
   return { days, basePrice, totalPrice, depositAmount };
 };
 
+// Calculate hourly booking details
+const calculateHourlyBookingDetails = (startTime, endTime, hourlyRate) => {
+  const start = new Date(startTime);
+  const end = new Date(endTime);
+  const hours = Math.ceil((end - start) / (1000 * 60 * 60)); // Round up to nearest hour
+  const depositAmount = 50; // Lower deposit for hourly bookings
+
+  if (isNaN(hours) || hours <= 0) {
+    throw new AppError("End time must be after start time", 400);
+  }
+
+  if (hours > 24) {
+    throw new AppError("Hourly bookings cannot exceed 24 hours. Please use daily booking instead.", 400);
+  }
+
+  const basePrice = hours * hourlyRate;
+  const totalPrice = basePrice + depositAmount;
+
+  return { hours, basePrice, totalPrice, depositAmount, hourlyRate };
+};
+
 // Helper function to determine booking status based on driver verification
 const determineBookingStatus = (driver, hasDriverData = false) => {
   if (!hasDriverData) return "license_required";
@@ -1574,5 +1595,107 @@ exports.getCarBooking = catchAsync( async (req, res, next) => {
   res.status(200).json({
     status: "success",
     data: bookings,
+  });
+});
+
+/**
+ * Create hourly booking
+ * POST /api/v1/bookings/hourly
+ * Creates a booking based on hourly rate
+ */
+exports.createHourlyBooking = catchAsync(async (req, res, next) => {
+  const currentTime = new Date();
+  const {
+    car,
+    startTime,
+    endTime,
+    pickupLocation,
+  } = req.body;
+
+  // Validate required fields
+  if (!car || !startTime || !endTime) {
+    return next(new AppError("Car, startTime, and endTime are required", 400));
+  }
+
+  // Parse times
+  const start = new Date(startTime);
+  const end = new Date(endTime);
+
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+    return next(new AppError("Invalid start or end time format", 400));
+  }
+
+  if (start < currentTime) {
+    return next(new AppError("Start time cannot be in the past", 400));
+  }
+
+  if (end <= start) {
+    return next(new AppError("End time must be after start time", 400));
+  }
+
+  // Validate car
+  const carDoc = await Car.findById(car);
+  if (!carDoc) {
+    return next(new AppError("Car not found", 404));
+  }
+
+  if (carDoc.availability !== "available") {
+    return next(new AppError("Car is not available", 400));
+  }
+
+  if (!carDoc.hourlyRate) {
+    return next(new AppError("This car does not support hourly bookings", 400));
+  }
+
+  // Calculate booking details
+  const { hours, basePrice, depositAmount, totalPrice, hourlyRate } =
+    calculateHourlyBookingDetails(start, end, carDoc.hourlyRate);
+
+  // Check for conflicting bookings
+  const conflictingBooking = await Booking.findOne({
+    car,
+    bookingType: "hourly",
+    status: { $in: ["confirmed", "active", "pending", "pending_payment"] },
+    $or: [
+      {
+        startTime: { $lt: end },
+        endTime: { $gt: start },
+      },
+    ],
+  });
+
+  if (conflictingBooking) {
+    return next(new AppError("Car is already booked for this time period", 400));
+  }
+
+  // Create booking
+  const booking = await Booking.create({
+    user: req.user._id,
+    car,
+    bookingType: "hourly",
+    startTime: start,
+    endTime: end,
+    hours,
+    hourlyRate,
+    basePrice,
+    totalPrice,
+    depositAmount,
+    pickupLocation: pickupLocation || "St. Louis",
+    returnLocation: pickupLocation || "St. Louis",
+    status: "pending_payment",
+    paymentStatus: "unpaid",
+  });
+
+  // Update car availability
+  carDoc.availability = "booked";
+  await carDoc.save();
+
+  // Populate for response
+  await booking.populate("car", "title brand model images hourlyRate");
+  await booking.populate("user", "fullName email phone");
+
+  res.status(201).json({
+    status: "success",
+    data: booking,
   });
 });

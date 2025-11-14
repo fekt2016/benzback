@@ -56,14 +56,36 @@ const bookingSchema = new mongoose.Schema(
     default: 'America/Chicago', // Central Time for St. Louis
     enum: Object.values(USA_TIME_ZONES)
   },
-    // Booking Dates & Times
+    // Booking type: "hourly" or "daily"
+    bookingType: {
+      type: String,
+      enum: ["hourly", "daily"],
+      default: "daily",
+    },
+    
+    // Hourly booking fields
+    startTime: {
+      type: Date,
+      // Required for hourly bookings
+    },
+    endTime: {
+      type: Date,
+      // Required for hourly bookings
+    },
+    hours: {
+      type: Number,
+      min: 0,
+      // Calculated from startTime and endTime
+    },
+    
+    // Daily booking fields (legacy)
     pickupDate: {
       type: Date,
-      required: true,
+      // Required for daily bookings
     },
     returnDate: {
       type: Date,
-      required: true,
+      // Required for daily bookings
     },
     pickupTime: {
       type: String,
@@ -75,8 +97,8 @@ const bookingSchema = new mongoose.Schema(
     },
     rentalDays: {
       type: Number,
-      required: true,
       min: 1,
+      // Required for daily bookings
     },
     depositAmount: {
       type: Number,
@@ -91,6 +113,12 @@ const bookingSchema = new mongoose.Schema(
     basePrice: {
       type: Number,
       required: true,
+    },
+    // For hourly bookings: hourlyRate * hours
+    hourlyRate: {
+      type: Number,
+      min: 0,
+      // Car's hourly rate at time of booking
     },
     taxAmount: {
       type: Number,
@@ -156,6 +184,47 @@ const bookingSchema = new mongoose.Schema(
       enum: ["stripe"],
       default: "stripe",
     },
+
+    // Booking negotiation fields (for driver marketplace)
+    negotiationStatus: {
+      type: String,
+      enum: ["pending", "negotiating", "accepted", "rejected", "expired"],
+      default: null,
+    },
+    proposedPrice: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
+    negotiatedPrice: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
+    negotiationChat: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ChatSession",
+      default: null,
+    },
+    negotiationHistory: [{
+      proposedBy: {
+        type: String,
+        enum: ["user", "driver"],
+        required: true,
+      },
+      proposedPrice: {
+        type: Number,
+        required: true,
+      },
+      message: {
+        type: String,
+        trim: true,
+      },
+      timestamp: {
+        type: Date,
+        default: Date.now,
+      },
+    }],
 
     // Location Information
     pickupLocation: {
@@ -405,9 +474,23 @@ bookingSchema.pre("save", function (next) {
   next();
 });
 
-// Virtual for booking duration in days
+// Virtual for booking duration in days (daily bookings)
 bookingSchema.virtual("durationDays").get(function () {
-  return Math.ceil((this.returnDate - this.pickupDate) / (1000 * 60 * 60 * 24));
+  if (this.bookingType === "hourly") {
+    return 0; // Hourly bookings don't have days
+  }
+  if (this.returnDate && this.pickupDate) {
+    return Math.ceil((this.returnDate - this.pickupDate) / (1000 * 60 * 60 * 24));
+  }
+  return 0;
+});
+
+// Virtual for booking duration in hours (hourly bookings)
+bookingSchema.virtual("durationHours").get(function () {
+  if (this.bookingType === "hourly" && this.startTime && this.endTime) {
+    return Math.ceil((this.endTime - this.startTime) / (1000 * 60 * 60));
+  }
+  return 0;
 });
 
 // Virtual for total amount due

@@ -1,29 +1,13 @@
-/**
- * SendGrid Client Singleton (Lazy Loading)
- * 
- * LAZY LOADING OPTIMIZATION: SendGrid module is only loaded when first needed.
- * This prevents WebAssembly memory allocation at application startup.
- * 
- * WASM MEMORY OPTIMIZATION: Ensures SendGrid is configured once globally.
- * SendGrid uses HTTP clients internally that can allocate WebAssembly memory.
- * 
- * This ensures the same SendGrid client is reused across all email operations.
- */
 
 let sgMail = null; // Will be loaded lazily
 let sendGridConfigured = false;
 
-/**
- * Initialize SendGrid singleton (lazy loading)
- * Called automatically on first use via getSendGrid()
- */
 function initializeSendGrid() {
   if (sendGridConfigured) {
     return; // Already configured
   }
 
-  // LAZY LOADING: Only require SendGrid module when first needed
-  // This prevents WASM memory allocation at application startup
+ 
   if (!sgMail) {
     try {
       sgMail = require("@sendgrid/mail");

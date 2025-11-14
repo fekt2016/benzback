@@ -253,7 +253,7 @@ exports.verifyOtp = catchAsync( async (req, res, next) => {
 });
 exports.login = catchAsync( async (req, res, next) => {
   try {
-    const { phone, password } = req.body;
+    const { phone, password , role} = req.body;
     const curphone = phone.replace(/\D/g, "");
 
     // Validation
@@ -261,10 +261,18 @@ exports.login = catchAsync( async (req, res, next) => {
       return next(new AppError("Please enter a valid phone number", 400));
     }
     if (!password) return next(new AppError("Please enter your password", 400));
+    if (!role) return next(new AppError("Please specify your role (user or driver)", 400));
+
+    // Validate role value
+    const validRoles = ["user", "driver", "admin"];
+    if (!validRoles.includes(role)) {
+      return next(new AppError("Invalid role. Must be 'user' or 'driver'", 400));
+    }
 
     // Get user WITHOUT document methods - just raw data
+    // Include role in select to verify it matches
     const user = await User.findOne({ phone: curphone })
-      .select("+password email fullName")
+      .select("+password email fullName role")
       .lean();
 
     if (!user) {
@@ -277,6 +285,17 @@ exports.login = catchAsync( async (req, res, next) => {
 
     if (!isPasswordCorrect) {
       return next(new AppError("Invalid phone number or password", 401));
+    }
+
+    // Verify user's role matches the requested role
+    const userRole = user.role || "user"; // Default to "user" if role is not set
+    if (userRole !== role) {
+      return next(
+        new AppError(
+          `Invalid role. This account is registered as a ${userRole}, not a ${role}. Please login with the correct role.`,
+          403
+        )
+      );
     }
 
     // Generate OTP
@@ -402,11 +421,17 @@ exports.restrictTo = (...roles) => {
 };
 
 exports.getMe = catchAsync(async (req, res, next) => {
- 
-
   try {
     const user = await User.findById(req.user._id)
       .select("-password -__v -otp -otpExpires -passwordChangedAt")
+      .populate({
+        path: "driver",
+        // select: "-updateHistory -__v",
+        populate: {
+          path: "car",
+          select: "name model brand images pricePerDay hourlyRate availability"
+        }
+      })
       .lean();
 
     if (!user) {
@@ -422,13 +447,21 @@ exports.getMe = catchAsync(async (req, res, next) => {
     // Explicitly set the executive field to ensure it's in the response
     user.executive = executiveValue;
 
+    // Prepare response data
+    const responseData = {
+      ...user,
+      executive: executiveValue, // Explicitly include executive field
+    };
+
+    // If driver exists, include it in the response
+    if (user.driver) {
+      responseData.driver = user.driver;
+    }
+
     res.status(200).json({
       status: "success",
       data: { 
-        user: {
-          ...user,
-          executive: executiveValue, // Explicitly include executive field
-        }
+        user: responseData,
       },
     });
   } catch (error) {

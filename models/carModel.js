@@ -2,7 +2,94 @@ const mongoose = require("mongoose");
 
 const carSchema = new mongoose.Schema(
   {
- type: {
+    // Driver-based marketplace fields
+    title: {
+      type: String,
+      trim: true,
+      // Auto-generate from brand + model if not provided
+    },
+    // Driver reference (unique - one driver per car)
+    driver: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Driver",
+      required: true,
+      unique: true, // Enforce one-driver-one-car rule
+    },
+    
+    // Car details
+    make: {
+      type: String,
+      trim: true,
+      required: true,
+    },
+    model: {
+      type: String,
+      trim: true,
+      required: true,
+    },
+    year: {
+      type: Number,
+      required: true,
+      min: 1900,
+      max: new Date().getFullYear() + 1,
+    },
+    color: {
+      type: String,
+      trim: true,
+    },
+    
+    // Hourly rate (required for hourly bookings)
+    hourlyRate: {
+      type: Number,
+      min: 0,
+      required: true,
+    },
+    
+    // Car photos
+    photos: [{
+      type: String, // URLs to images
+    }],
+    
+    // Car status
+    status: {
+      type: String,
+      enum: ["available", "unavailable", "booked", "maintenance"],
+      default: "available",
+    },
+    
+    // Legacy fields for backward compatibility
+    brand: {
+      type: String,
+      trim: true,
+    },
+    title: {
+      type: String,
+      trim: true,
+    },
+    availability: {
+      type: String,
+      enum: ["available", "unavailable", "booked"],
+      default: "available",
+    },
+    geoLocation: {
+      lat: {
+        type: Number,
+        min: -90,
+        max: 90,
+      },
+      lng: {
+        type: Number,
+        min: -180,
+        max: 180,
+      },
+      lastUpdated: {
+        type: Date,
+        default: Date.now,
+      },
+    },
+    
+    // Legacy fields (maintained for backward compatibility)
+    type: {
       type: String,
       enum: [
         "economy",
@@ -56,9 +143,8 @@ const carSchema = new mongoose.Schema(
       ],
    default: "UNknown",
     },
-    model: { type: String, required: true },
-    year: { type: Number, required: true },
-    pricePerDay: { type: Number, required: true },
+    // model and year moved above
+    pricePerDay: { type: Number, required: false }, // Made optional for hourly-only bookings
     transmission: {
       type: String,
       enum: ["manual", "automatic"],
@@ -70,12 +156,8 @@ const carSchema = new mongoose.Schema(
       default: "petrol",
     },
     seats: { type: Number, default: 4 },
-    images: [String],
-    status: {
-      type: String,
-      enum: ["available", "rented", "maintenance"],
-      default: "available",
-    },
+    images: [String], // Legacy field - use photos instead
+    // status moved above
 
    
     pickupWindow: {
@@ -162,12 +244,52 @@ function calculateRatingStats(doc) {
 }
 
 
+// Auto-generate title from make + model if not provided
 carSchema.pre("save", function (next) {
   if (this.isModified("recentReviews")) {
     calculateRatingStats(this);
   }
+  
+  // Auto-generate title if not provided
+  if (!this.title && this.make && this.model) {
+    this.title = `${this.make} ${this.model}`;
+  }
+  
+  // Sync brand with make if brand not set (for backward compatibility)
+  if (!this.brand && this.make) {
+    this.brand = this.make;
+  }
+  
+  // Sync images with photos if photos not set (for backward compatibility)
+  if (this.images && this.images.length > 0 && (!this.photos || this.photos.length === 0)) {
+    this.photos = this.images;
+  }
+  
+  // Sync photos with images if images not set (for backward compatibility)
+  if (this.photos && this.photos.length > 0 && (!this.images || this.images.length === 0)) {
+    this.images = this.photos;
+  }
+  
+  // Sync availability with status (for backward compatibility)
+  if (this.status && !this.availability) {
+    if (this.status === "available") {
+      this.availability = "available";
+    } else if (this.status === "booked") {
+      this.availability = "booked";
+    } else {
+      this.availability = "unavailable";
+    }
+  }
+  
   next();
 });
+
+// Indexes for marketplace queries
+carSchema.index({ driver: 1 }, { unique: true }); // Unique index for one-driver-one-car
+carSchema.index({ "geoLocation.lat": 1, "geoLocation.lng": 1 });
+carSchema.index({ status: 1 });
+carSchema.index({ availability: 1 }); // Legacy
+carSchema.index({ hourlyRate: 1 });
 
 
 carSchema.pre("findOneAndUpdate", async function (next) {

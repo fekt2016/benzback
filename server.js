@@ -35,49 +35,9 @@ if (process.env.NODE_OPTIONS) {
 
 // MEMORY OPTIMIZATION: Check if memory flags are not applied (heap too high)
 // Expected heap limit should be ~512MB, but default Node.js gives ~4GB
-if (heapLimit > MAX_EXPECTED_MEMORY) {
-  console.error(`\n❌ CRITICAL: Memory flags NOT applied!`);
-  console.error(`❌ Current memory limit: ${heapLimit.toFixed(2)}MB (too high!)`);
-  console.error(`❌ Expected limit: ~${TARGET_MEMORY}MB (512MB)`);
-  console.error(`❌ This indicates Node.js memory flags are NOT being used!`);
-  console.error(`\n🔧 IMMEDIATE FIX REQUIRED:`);
-  console.error(`1. In cPanel → Node.js App → Set "Startup File" to: start.sh`);
-  console.error(`2. Verify environment variable exists: NODE_OPTIONS=--max-old-space-size=512 --expose-gc`);
-  console.error(`3. RESTART your app (memory flags only apply on startup)`);
-  console.error(`4. After restart, you should see: "Current max memory: ~512.00MB"`);
-  console.error(`\n💡 Note: start.sh sets memory flags directly, so NODE_OPTIONS env var may not be set, but memory flags still work.\n`);
-  
-  // Don't exit in development, but warn heavily
-  if (process.env.NODE_ENV === 'production') {
-    console.error(`⚠️  WARNING: Running with default memory limit. This may cause crashes!`);
-    console.error(`⚠️  The server will continue, but you MUST fix this before production use.`);
-  }
-}
 
-// Check if memory is too low
-if (heapLimit < MIN_REQUIRED_MEMORY) {
-  console.error(`\n❌ CRITICAL MEMORY ERROR:`);
-  console.error(`❌ Current memory limit: ${heapLimit.toFixed(2)}MB`);
-  console.error(`❌ Required minimum: ${MIN_REQUIRED_MEMORY}MB`);
-  console.error(`❌ Your server will crash with "Out of memory" errors!`);
-  console.error(`\n🔧 IMMEDIATE FIX REQUIRED:`);
-  console.error(`1. In cPanel → Node.js App → Set "Startup File" to: start.sh`);
-  console.error(`2. Ensure start.sh is set as startup file in cPanel Node.js App`);
-  console.error(`3. Restart your app`);
-  console.error(`\n💡 Note: start.sh sets memory flags directly via exec node command.\n`);
-  
-  // Don't exit in development, but warn heavily
-  if (process.env.NODE_ENV === 'production') {
-    console.error(`❌ Exiting to prevent crashes. Fix the memory settings and restart.`);
-    process.exit(1);
-  }
-}
 
-// Success message if memory is in correct range
-if (heapLimit >= MIN_REQUIRED_MEMORY && heapLimit <= MAX_EXPECTED_MEMORY) {
-  console.log(`✅ Memory limit is correctly set: ${heapLimit.toFixed(2)}MB (target: ${TARGET_MEMORY}MB)`);
-}
-
+// Check if memory is to
 // Validate environment variables
 validateEnv();
 

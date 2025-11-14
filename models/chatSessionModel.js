@@ -7,7 +7,7 @@ const mongoose = require("mongoose");
 const messageSchema = new mongoose.Schema({
   senderRole: {
     type: String,
-    enum: ["user", "bot", "admin"],
+    enum: ["user", "bot", "admin", "driver"],
     required: true,
   },
   message: {
@@ -18,6 +18,11 @@ const messageSchema = new mongoose.Schema({
   isBot: {
     type: Boolean,
     default: false,
+  },
+  priceProposal: {
+    type: Number,
+    min: 0,
+    default: null,
   },
   createdAt: {
     type: Date,
@@ -37,6 +42,17 @@ const chatSessionSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Driver",
       default: null,
+    },
+    bookingId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Booking",
+      default: null,
+      index: true,
+    },
+    chatType: {
+      type: String,
+      enum: ["support", "negotiation"],
+      default: "support",
     },
     isActive: {
       type: Boolean,

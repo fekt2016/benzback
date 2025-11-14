@@ -4,12 +4,17 @@ const Booking = require("../models/bookingModel");
 const AppError = require("../utils/appError");
 const moment = require("moment-timezone");
 const mongoose = require("mongoose");
+const User = require("../models/userModel");
 
-/**
- * Get all professional drivers (Public route)
- * Filter by availability status
- * Only returns active drivers
- */
+
+exports.getMyProfile = catchAsync(async (req, res, next) => {
+  const user = await User.findById(req.user._id).select("driver").lean();
+  if (!user?.driver) {
+    return next(new AppError("Driver not found", 404));
+  }
+  const driver = await Driver.findById(user.driver).lean();
+  res.status(200).json({ status: "success", data: driver });
+});
 exports.getAllProfessionalDrivers = catchAsync(async (req, res, next) => {
   const { status, available } = req.query;
   
@@ -34,11 +39,7 @@ exports.getAllProfessionalDrivers = catchAsync(async (req, res, next) => {
   });
 });
 
-/**
- * Get all professional drivers (Admin only)
- * Returns all drivers including inactive ones
- * Supports filtering and pagination
- */
+
 exports.getAdminProfessionalDrivers = catchAsync(async (req, res, next) => {
   const { status, verified, active, search, page = 1, limit = 50 } = req.query;
   
@@ -248,11 +249,7 @@ exports.deleteProfessionalDriver = catchAsync(async (req, res, next) => {
   });
 });
 
-/**
- * ========================================
- * RENTAL DRIVER FUNCTIONS
- * ========================================
- */
+
 
 /**
  * Add a rental driver (User's own driver)
@@ -471,6 +468,101 @@ exports.getDriverAvailabilitySummary = catchAsync(async (req, res, next) => {
     },
     statsRaw: stats,
     lastOnlineDrivers,
+  });
+});
+
+/**
+ * Update driver online/offline status
+ * PATCH /api/v1/drivers/status
+ */
+exports.updateDriverStatus = catchAsync(async (req, res, next) => {
+  const userId = req.user._id;
+  console.log("req.body", req.body);
+  const { isOnline, currentStatus } = req.body;
+
+
+  // Find driver
+  const user = await User.findById(userId).select("driver").lean();
+  console.log("user", user);
+  
+  if (!user?.driver) {
+    return next(new AppError("Driver profile not found", 404));
+  }
+
+  const driver = await Driver.findById(user.driver);
+  if (!driver) {
+    return next(new AppError("Driver not found", 404));
+  }
+
+  // Update status
+  const updateData = {};
+  if (isOnline !== undefined) {
+    updateData.isOnline = isOnline;
+  }
+  if (currentStatus) {
+    updateData.currentStatus = currentStatus;
+    updateData.lastActiveAt = new Date();
+  }
+
+  // Set defaults if not provided
+  if (isOnline === false) {
+    updateData.currentStatus = "offline";
+  } else if (isOnline === true && !currentStatus) {
+    updateData.currentStatus = "available";
+  }
+
+  // Also update lastAvailable timestamp
+  if (isOnline === true) {
+    updateData.lastAvailable = new Date();
+  }
+
+  const updatedDriver = await Driver.findByIdAndUpdate(
+    driver._id,
+    updateData,
+    { new: true, runValidators: true }
+  ).populate("user", "fullName email");
+
+  res.status(200).json({
+    status: "success",
+    data: updatedDriver,
+  });
+});
+
+/**
+ * Get driver's booking requests
+ * GET /api/v1/drivers/my-bookings
+ */
+exports.getDriverBookings = catchAsync(async (req, res, next) => {
+  const userId = req.user._id;
+
+  // Find driver
+  const User = require("../models/userModel");
+  const user = await User.findById(userId).select("driver").lean();
+  
+  if (!user?.driver) {
+    return next(new AppError("Driver profile not found", 404));
+  }
+
+  const driver = await Driver.findById(user.driver).lean();
+  if (!driver) {
+    return next(new AppError("Driver not found", 404));
+  }
+
+  // Get bookings for this driver
+  const bookings = await Booking.find({
+    driver: driver._id,
+    negotiationStatus: { $in: ["pending", "negotiating"] },
+  })
+    .populate("user", "fullName email phone")
+    .populate("car", "title brand model images hourlyRate")
+    .populate("negotiationChat")
+    .sort({ createdAt: -1 })
+    .lean();
+
+  res.status(200).json({
+    status: "success",
+    results: bookings.length,
+    data: bookings,
   });
 });
 
